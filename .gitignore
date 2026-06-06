@@ -1,0 +1,44 @@
+.DS_Store
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs and runtime output
+*.log
+tmp/
+coverage/
+dist/
+build/
+
+# Node / frontend
+node_modules/
+.next/
+.turbo/
+vite.config.ts.timestamp-*
+vite.config.js.timestamp-*
+
+# Go
+bin/
+*.test
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Docker volumes and local data
+.docker/
+data/
+uploads/
+reports/
+
+# IDE
+.idea/
+.vscode/

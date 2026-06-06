@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: SecureWatch
+    orgId: 1
+    folder: SecureWatch
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

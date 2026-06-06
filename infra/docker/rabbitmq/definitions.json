@@ -1,0 +1,127 @@
+{
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "securewatch.tasks",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "securewatch.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "securewatch.dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "tasks.text",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "securewatch.dlx",
+        "x-dead-letter-routing-key": "task.failed"
+      }
+    },
+    {
+      "name": "tasks.document",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "securewatch.dlx",
+        "x-dead-letter-routing-key": "task.failed"
+      }
+    },
+    {
+      "name": "tasks.image",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "securewatch.dlx",
+        "x-dead-letter-routing-key": "task.failed"
+      }
+    },
+    {
+      "name": "tasks.audio",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "securewatch.dlx",
+        "x-dead-letter-routing-key": "task.failed"
+      }
+    },
+    {
+      "name": "tasks.dead_letter",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "securewatch.tasks",
+      "vhost": "/",
+      "destination": "tasks.text",
+      "destination_type": "queue",
+      "routing_key": "task.text",
+      "arguments": {}
+    },
+    {
+      "source": "securewatch.tasks",
+      "vhost": "/",
+      "destination": "tasks.document",
+      "destination_type": "queue",
+      "routing_key": "task.document",
+      "arguments": {}
+    },
+    {
+      "source": "securewatch.tasks",
+      "vhost": "/",
+      "destination": "tasks.image",
+      "destination_type": "queue",
+      "routing_key": "task.image",
+      "arguments": {}
+    },
+    {
+      "source": "securewatch.tasks",
+      "vhost": "/",
+      "destination": "tasks.audio",
+      "destination_type": "queue",
+      "routing_key": "task.audio",
+      "arguments": {}
+    },
+    {
+      "source": "securewatch.dlx",
+      "vhost": "/",
+      "destination": "tasks.dead_letter",
+      "destination_type": "queue",
+      "routing_key": "task.failed",
+      "arguments": {}
+    }
+  ]
+}
