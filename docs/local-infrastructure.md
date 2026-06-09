@@ -6,6 +6,7 @@ SecureWatch local infrastructure is managed with Docker Compose. This document m
 
 | Task | Service | Compose Service | Local URL / Port |
 | --- | --- | --- | --- |
+| HU-04-T08 | Web App | `web` | `localhost:3000` |
 | HU-03 | API Gateway | `api-gateway` | `localhost:8080` |
 | HU-02-T01 | PostgreSQL | `postgres` | `localhost:5432` |
 | HU-02-T02 | RabbitMQ | `rabbitmq` | AMQP `localhost:5672`, Management UI `localhost:15672` |
@@ -20,6 +21,7 @@ HU-02-T06 is implemented with the Docker network `securewatch-local`. All infras
 Examples:
 
 - `postgres:5432`
+- `web:80`
 - `api-gateway:8080`
 - `rabbitmq:5672`
 - `minio:9000`
