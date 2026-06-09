@@ -1,0 +1,62 @@
+import type { Config } from "tailwindcss"
+import animate from "tailwindcss-animate"
+
+const config = {
+  darkMode: ["class"],
+  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        surface: "#faf9fc",
+        "on-primary": "#ffffff",
+        primary: "#022448",
+        "on-tertiary-container": "#c69b5f",
+        "surface-tint": "#455f87",
+        "outline-variant": "#c4c6cf",
+        "on-primary-fixed": "#001c3b",
+        "on-primary-fixed-variant": "#2d486d",
+        "on-surface-variant": "#43474e",
+        "surface-container-low": "#f4f3f7",
+        "on-surface": "#1a1c1e",
+        "on-secondary-container": "#006f67",
+        "surface-bright": "#faf9fc",
+        "surface-container": "#eeedf1",
+        "secondary-container": "#99efe5",
+        background: "#faf9fc",
+        error: "#ba1a1a",
+        "error-container": "#ffdad6",
+        "on-error-container": "#93000a",
+        outline: "#74777f",
+        "surface-container-lowest": "#ffffff",
+        "secondary-fixed": "#9cf2e8",
+        secondary: "#006a63",
+        "surface-variant": "#e3e2e6",
+        "on-primary-container": "#8aa4cf",
+        "primary-container": "#1e3a5f",
+      },
+      borderRadius: {
+        DEFAULT: "0.125rem",
+        lg: "0.25rem",
+        xl: "0.5rem",
+        full: "0.75rem",
+      },
+      fontFamily: {
+        sans: ["Poppins", "ui-sans-serif", "system-ui"],
+        display: ["Poppins", "ui-sans-serif", "system-ui"],
+      },
+      fontSize: {
+        "headline-md": ["24px", { lineHeight: "32px", fontWeight: "600" }],
+        "body-sm": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+        "label-sm": ["11px", { lineHeight: "14px", letterSpacing: "0.05em", fontWeight: "500" }],
+        "body-lg": ["18px", { lineHeight: "28px", fontWeight: "400" }],
+        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+        "headline-lg": ["32px", { lineHeight: "40px", fontWeight: "600" }],
+        "label-md": ["13px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+        display: ["48px", { lineHeight: "56px", fontWeight: "700" }],
+      },
+    },
+  },
+  plugins: [animate],
+} satisfies Config
+
+export default config

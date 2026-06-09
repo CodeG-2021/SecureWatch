@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"time"
 
 	"github.com/codeg/securewatch/services/api-gateway/internal/config"
@@ -17,6 +19,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /metrics", metricsHandler)
 	mux.HandleFunc("GET /api/v1", apiIndexHandler)
 	mux.HandleFunc("GET /api/v1/me", meHandler)
+	mux.Handle("POST /api/v1/auth/register", authServiceProxy(cfg, logger, "/auth/register"))
 
 	handler := recoverMiddleware(logger, mux)
 	handler = authMiddleware(cfg, logger, handler)
@@ -60,8 +63,34 @@ func apiIndexHandler(w http.ResponseWriter, r *http.Request) {
 			"GET /metrics",
 			"GET /api/v1",
 			"GET /api/v1/me",
+			"POST /api/v1/auth/register",
 		},
 	})
+}
+
+func authServiceProxy(cfg config.Config, logger *slog.Logger, targetPath string) http.Handler {
+	target, err := url.Parse(cfg.AuthServiceURL)
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger.Error("invalid auth service url", "url", cfg.AuthServiceURL, "error", err)
+			writeError(w, http.StatusInternalServerError, "invalid_upstream", "Auth service is not configured.")
+		})
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	originalDirector := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		originalDirector(r)
+		r.URL.Path = targetPath
+		r.Host = target.Host
+		r.Header.Set("X-Forwarded-Host", r.Host)
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error("auth service proxy failed", "error", err)
+		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Auth service is unavailable.")
+	}
+
+	return proxy
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {
