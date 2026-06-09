@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SecureWatch - Register</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#faf9fc",
+                        "on-primary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "primary": "#022448",
+                        "on-tertiary-container": "#c69b5f",
+                        "surface-tint": "#455f87",
+                        "tertiary-fixed": "#ffddb2",
+                        "on-tertiary-fixed": "#291800",
+                        "surface-container-high": "#e9e7eb",
+                        "outline-variant": "#c4c6cf",
+                        "on-primary-fixed": "#001c3b",
+                        "on-secondary-fixed-variant": "#00504a",
+                        "on-primary-fixed-variant": "#2d486d",
+                        "on-surface-variant": "#43474e",
+                        "surface-container-low": "#f4f3f7",
+                        "on-surface": "#1a1c1e",
+                        "on-secondary-container": "#006f67",
+                        "surface-bright": "#faf9fc",
+                        "on-secondary-fixed": "#00201d",
+                        "surface-container": "#eeedf1",
+                        "secondary-container": "#99efe5",
+                        "inverse-surface": "#2f3033",
+                        "on-error": "#ffffff",
+                        "background": "#faf9fc",
+                        "inverse-on-surface": "#f1f0f4",
+                        "error": "#ba1a1a",
+                        "tertiary-fixed-dim": "#edbf7f",
+                        "tertiary-container": "#503300",
+                        "surface-dim": "#dad9dd",
+                        "secondary-fixed-dim": "#80d5cb",
+                        "on-background": "#1a1c1e",
+                        "primary-fixed": "#d5e3ff",
+                        "tertiary": "#341f00",
+                        "on-tertiary-fixed-variant": "#60410c",
+                        "primary-fixed-dim": "#adc8f5",
+                        "outline": "#74777f",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-fixed": "#9cf2e8",
+                        "secondary": "#006a63",
+                        "surface-container-highest": "#e3e2e6",
+                        "error-container": "#ffdad6",
+                        "on-error-container": "#93000a",
+                        "surface-variant": "#e3e2e6",
+                        "inverse-primary": "#adc8f5",
+                        "on-primary-container": "#8aa4cf",
+                        "primary-container": "#1e3a5f"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "section-gap": "2rem",
+                        "unit": "4px",
+                        "edge-margin": "2rem",
+                        "gutter": "1.5rem",
+                        "container-max": "100%",
+                        "sidebar-width": "280px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Poppins"],
+                        "body-sm": ["Poppins"],
+                        "label-sm": ["Poppins"],
+                        "body-lg": ["Poppins"],
+                        "body-md": ["Poppins"],
+                        "headline-lg": ["Poppins"],
+                        "label-md": ["Poppins"],
+                        "display": ["Poppins"],
+                        "headline-sm": ["Poppins"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "label-md": ["13px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "display": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface h-screen w-screen overflow-hidden antialiased">
+<!-- Split Screen Layout -->
+<div class="flex h-full w-full">
+<!-- Left Side: Brand/Visual Area -->
+<div class="hidden lg:flex w-1/2 bg-primary relative items-center justify-center overflow-hidden">
+<!-- Background Image Placeholder -->
+<img alt="Forensic Analysis Background" class="absolute inset-0 w-full h-full object-cover opacity-20 mix-blend-overlay" data-alt="A highly professional, clinical control room environment featuring massive digital screens displaying complex network graphs and data nodes in shades of deep navy and bright white. The aesthetic is extremely minimalist and high-tech, evoking a sense of precision analysis and security. Soft, cool lighting illuminates the sleek surfaces, with a slight depth of field blurring the background elements to maintain focus. The overall mood is authoritative and forensic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAS-IeRGMXOuH422VmpFjmm6B0DwQ6Dk5ZEF4BrgEj-INwfLEWa1Cu4uByIyGQKRbnAhhD1Ox2DtZzkVYu9vn8FS3sivwzeF3kZLb6Bg7J9LXAuy7Uiyuzi3qBStjuUX4m3NmAamDLKqZ_tEhibquXq7F2AIzkmXotx2W-vtjfzPY2qe0-cc0WeSAZiOXjhMlI8tdfLX3sDqMDOe21BESsAy3HcBa4jEv-gqVa1qwpLR7UNvGcv9ml1EPrIka3bh_NftzdfUlSPDFCQ"/>
+<div class="relative z-10 flex flex-col p-12 max-w-lg">
+<div class="flex items-center space-x-3 mb-8">
+<span class="material-symbols-outlined text-on-primary text-4xl" data-weight="fill" style="font-variation-settings: 'FILL' 1;">shield_lock</span>
+<h1 class="font-headline-lg text-headline-lg text-on-primary">SecureWatch</h1>
+</div>
+<h2 class="font-display text-display text-on-primary mb-6 leading-tight">Precision Analysis.<br/>Absolute Clarity.</h2>
+<p class="font-body-lg text-body-lg text-on-primary-container max-w-md">
+                    Join the command center. Establish your identity to access immutable evidence workflows and advanced forensic telemetry.
+                </p>
+<!-- Decorative Metric Nodes -->
+<div class="mt-16 flex space-x-6 border-t border-primary-container pt-8">
+<div>
+<p class="font-label-sm text-label-sm text-on-primary-container uppercase tracking-wider mb-1">Status</p>
+<p class="font-body-md text-body-md text-secondary-fixed">System Nominal</p>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-on-primary-container uppercase tracking-wider mb-1">Environment</p>
+<p class="font-body-md text-body-md text-secondary-fixed">Secure Sandbox</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Side: Form Area -->
+<div class="w-full lg:w-1/2 bg-surface-container-lowest flex items-center justify-center p-8 sm:p-12 lg:p-24 overflow-y-auto">
+<div class="w-full max-w-md space-y-8">
+<!-- Mobile Logo Header (Hidden on Desktop) -->
+<div class="lg:hidden flex items-center space-x-2 mb-8">
+<span class="material-symbols-outlined text-primary text-3xl" data-weight="fill" style="font-variation-settings: 'FILL' 1;">shield_lock</span>
+<h1 class="font-headline-md text-headline-md text-primary tracking-tighter">SecureWatch</h1>
+</div>
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface mb-2">Create an account</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Enter your details to register as a new operative.</p>
+</div>
+<form action="#" class="space-y-6" method="POST">
+<!-- Full Name -->
+<div>
+<label class="block font-label-md text-label-md text-on-surface mb-1" for="name">Full Name</label>
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-lg">person</span>
+</div>
+<input class="appearance-none block w-full pl-10 pr-3 py-2.5 border border-outline-variant bg-surface rounded-DEFAULT font-body-sm text-body-sm text-on-surface placeholder-outline focus:outline-none focus:ring-1 focus:ring-secondary focus:border-secondary transition-colors" id="name" name="name" placeholder="Jane Doe" required="" type="text"/>
+</div>
+</div>
+<!-- Email -->
+<div>
+<label class="block font-label-md text-label-md text-on-surface mb-1" for="email">Organizational Email</label>
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-lg">mail</span>
+</div>
+<input class="appearance-none block w-full pl-10 pr-3 py-2.5 border border-outline-variant bg-surface rounded-DEFAULT font-body-sm text-body-sm text-on-surface placeholder-outline focus:outline-none focus:ring-1 focus:ring-secondary focus:border-secondary transition-colors" id="email" name="email" placeholder="analyst@domain.com" required="" type="email"/>
+</div>
+</div>
+<!-- Access Role -->
+<div>
+<label class="block font-label-md text-label-md text-on-surface mb-1" for="role">Access Role</label>
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-lg">badge</span>
+</div>
+<select class="appearance-none block w-full pl-10 pr-10 py-2.5 border border-outline-variant bg-surface rounded-DEFAULT font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary focus:border-secondary transition-colors" id="role" name="role" required="">
+<option class="text-outline" disabled="" selected="" value="">Select your clearance level</option>
+<option value="analyst">Analyst</option>
+<option value="supervisor">Supervisor</option>
+<option value="administrator">Administrator</option>
+</select>
+<div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-lg">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Password -->
+<div>
+<label class="block font-label-md text-label-md text-on-surface mb-1" for="password">Password</label>
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-lg">lock</span>
+</div>
+<input class="appearance-none block w-full pl-10 pr-3 py-2.5 border border-outline-variant bg-surface rounded-DEFAULT font-body-sm text-body-sm text-on-surface placeholder-outline focus:outline-none focus:ring-1 focus:ring-secondary focus:border-secondary transition-colors" id="password" name="password" placeholder="••••••••" required="" type="password"/>
+</div>
+</div>
+<!-- Confirm Password -->
+<div>
+<label class="block font-label-md text-label-md text-on-surface mb-1" for="confirm-password">Confirm Password</label>
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-lg">lock</span>
+</div>
+<input class="appearance-none block w-full pl-10 pr-3 py-2.5 border border-outline-variant bg-surface rounded-DEFAULT font-body-sm text-body-sm text-on-surface placeholder-outline focus:outline-none focus:ring-1 focus:ring-secondary focus:border-secondary transition-colors" id="confirm-password" name="confirm-password" placeholder="••••••••" required="" type="password"/>
+</div>
+<p class="mt-2 font-label-sm text-label-sm text-on-surface-variant">Min 8 characters, include a symbol</p>
+</div>
+<!-- Terms Checkbox -->
+<div class="flex items-start mt-6">
+<div class="flex items-center h-5">
+<input class="focus:ring-secondary h-4 w-4 text-primary border-outline-variant rounded-DEFAULT bg-surface" id="terms" name="terms" required="" type="checkbox"/>
+</div>
+<div class="ml-3 text-sm">
+<label class="font-body-sm text-body-sm text-on-surface" for="terms">
+                                I agree to the <a class="font-medium text-primary hover:text-secondary transition-colors underline decoration-outline-variant hover:decoration-secondary underline-offset-2" href="#">Terms of Service</a> and <a class="font-medium text-primary hover:text-secondary transition-colors underline decoration-outline-variant hover:decoration-secondary underline-offset-2" href="#">Security Policy</a>
+</label>
+</div>
+</div>
+<!-- Submit Button -->
+<div class="pt-2">
+<button class="w-full flex justify-center items-center space-x-2 py-3 px-4 border border-transparent rounded-DEFAULT shadow-sm font-label-md text-label-md text-on-primary bg-primary hover:bg-primary-container focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors" type="submit">
+<span class="material-symbols-outlined text-[18px]">person_add</span>
+<span>Create account</span>
+</button>
+</div>
+</form>
+<!-- Footer Link -->
+<div class="text-center mt-8">
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                        Already have an account? 
+                        <a class="font-medium text-primary hover:text-secondary transition-colors" href="#">Sign in</a>
+</p>
+</div>
+</div>
+</div>
+</div>
+</body></html>

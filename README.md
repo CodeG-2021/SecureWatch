@@ -53,6 +53,7 @@ make check-infra
 
 Default local services:
 
+- Web App: `localhost:3000`
 - API Gateway: `localhost:8080`
 - PostgreSQL: `localhost:5432`
 - RabbitMQ: `localhost:15672`

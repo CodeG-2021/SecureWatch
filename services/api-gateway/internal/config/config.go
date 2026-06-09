@@ -12,6 +12,7 @@ type Config struct {
 	Port               string
 	LogLevel           string
 	JWTSecret          string
+	AuthServiceURL     string
 	CORSAllowedOrigins []string
 	CORSAllowedMethods []string
 	CORSAllowedHeaders []string
@@ -25,6 +26,7 @@ func Load() Config {
 		Port:               getEnv("API_GATEWAY_PORT", "8080"),
 		LogLevel:           strings.ToLower(getEnv("LOG_LEVEL", "info")),
 		JWTSecret:          getEnv("JWT_SECRET", "change-me-in-local-env"),
+		AuthServiceURL:     getEnv("AUTH_SERVICE_URL", "http://auth-service:8081"),
 		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 		CORSAllowedMethods: splitCSV(getEnv("CORS_ALLOWED_METHODS", "GET,POST,PUT,PATCH,DELETE,OPTIONS")),
 		CORSAllowedHeaders: splitCSV(getEnv("CORS_ALLOWED_HEADERS", "Authorization,Content-Type,X-Request-ID")),

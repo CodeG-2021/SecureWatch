@@ -125,7 +125,10 @@ func isAllowedOrigin(origin string, allowed []string) bool {
 }
 
 func isPublicRoute(path string) bool {
-	return path == "/healthz" || path == "/readyz" || path == "/metrics"
+	return path == "/healthz" ||
+		path == "/readyz" ||
+		path == "/metrics" ||
+		path == "/api/v1/auth/register"
 }
 
 func validateHS256JWT(token string, secret string) (JWTClaims, error) {
