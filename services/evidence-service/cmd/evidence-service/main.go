@@ -60,7 +60,7 @@ func main() {
 	reportsRepo  := storage.NewReportsRepository(db)
 
 	// ── HTTP server ───────────────────────────────────────────────────────────
-	router := apphttp.NewRouter(evidenceRepo, findingsRepo, reportsRepo, minioStore)
+	router := apphttp.NewRouter(evidenceRepo, findingsRepo, reportsRepo, minioStore, db)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

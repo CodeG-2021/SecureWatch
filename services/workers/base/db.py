@@ -3,9 +3,15 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+_NOTIFY_CHANNEL = "securewatch_events"
+
 
 def get_connection():
     return psycopg2.connect(os.environ["DATABASE_URL"])
+
+
+def _notify(cur, payload: dict):
+    cur.execute("SELECT pg_notify(%s, %s)", (_NOTIFY_CHANNEL, json.dumps(payload)))
 
 
 def get_task(conn, task_id: str) -> dict | None:
@@ -29,6 +35,11 @@ def mark_task_processing(conn, task_id: str, worker_id: str):
             "UPDATE tasks SET status='processing', worker_id=%s, started_at=NOW(), updated_at=NOW() WHERE id=%s",
             (worker_id, task_id),
         )
+        cur.execute("SELECT case_id, evidence_id FROM tasks WHERE id=%s", (task_id,))
+        row = cur.fetchone()
+        if row:
+            _notify(cur, {"type": "task_updated", "case_id": str(row[0]), "evidence_id": str(row[1]),
+                          "task_id": task_id, "status": "processing"})
     conn.commit()
 
 
@@ -38,6 +49,14 @@ def mark_task_completed(conn, task_id: str):
             "UPDATE tasks SET status='completed', completed_at=NOW(), updated_at=NOW() WHERE id=%s",
             (task_id,),
         )
+        cur.execute("SELECT case_id, evidence_id FROM tasks WHERE id=%s", (task_id,))
+        row = cur.fetchone()
+        case_id = evidence_id = None
+        if row:
+            case_id, evidence_id = str(row[0]), str(row[1])
+            _notify(cur, {"type": "task_updated", "case_id": case_id, "evidence_id": evidence_id,
+                          "task_id": task_id, "status": "completed"})
+
         # Propagate completed status to evidence when ALL its tasks are done
         cur.execute(
             """
@@ -51,6 +70,9 @@ def mark_task_completed(conn, task_id: str):
             """,
             (task_id, task_id),
         )
+        if cur.rowcount > 0 and case_id:
+            _notify(cur, {"type": "evidence_updated", "case_id": case_id,
+                          "evidence_id": evidence_id, "status": "completed"})
     conn.commit()
 
 
@@ -71,6 +93,11 @@ def mark_task_failed(conn, task_id: str, error_msg: str):
             """,
             (error_msg[:2000], task_id),
         )
+        cur.execute("SELECT case_id, evidence_id, status FROM tasks WHERE id=%s", (task_id,))
+        row = cur.fetchone()
+        if row:
+            _notify(cur, {"type": "task_updated", "case_id": str(row[0]), "evidence_id": str(row[1]),
+                          "task_id": task_id, "status": str(row[2])})
     conn.commit()
 
 
@@ -106,6 +133,9 @@ def create_finding(
             ),
         )
         finding_id = str(cur.fetchone()[0])
+        _notify(cur, {"type": "finding_created", "case_id": case_id, "evidence_id": evidence_id,
+                      "finding_id": finding_id, "severity": severity, "title": title})
+
         # Recalculate case risk score after every new finding
         cur.execute(
             """
@@ -128,9 +158,14 @@ def create_finding(
                 FROM findings WHERE case_id = %s
             ) sub
             WHERE cases.id = %s
+            RETURNING risk_score, findings_count
             """,
             (case_id, case_id),
         )
+        updated = cur.fetchone()
+        if updated:
+            _notify(cur, {"type": "risk_updated", "case_id": case_id,
+                          "risk_score": float(updated[0]), "findings_count": int(updated[1])})
     conn.commit()
     return finding_id
 

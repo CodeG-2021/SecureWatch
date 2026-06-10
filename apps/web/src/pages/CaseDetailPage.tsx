@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useCaseStream } from "../lib/useCaseStream"
 import {
   ArrowLeftIcon,
   PencilSquareIcon,
@@ -129,7 +130,7 @@ function EvidenceStatusBadge({ status }: { status: Evidence["status"] }) {
 
 // ─── Evidence tab ─────────────────────────────────────────────────────────────
 
-function EvidenceTab({ caseId }: { caseId: string }) {
+function EvidenceTab({ caseId, refreshTrigger }: { caseId: string; refreshTrigger?: number }) {
   const [evidences,    setEvidences]    = useState<Evidence[]>([])
   const [loading,      setLoading]      = useState(true)
   const [uploading,    setUploading]    = useState(false)
@@ -146,6 +147,8 @@ function EvidenceTab({ caseId }: { caseId: string }) {
   }, [caseId])
 
   useEffect(() => { loadEvidences() }, [loadEvidences])
+  // Re-fetch when a real-time event signals a change
+  useEffect(() => { if (refreshTrigger) loadEvidences() }, [refreshTrigger, loadEvidences])
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -335,17 +338,20 @@ function findingTypeLabel(t: string) {
   return labels[t] ?? t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function FindingsTab({ caseId }: { caseId: string }) {
+function FindingsTab({ caseId, refreshTrigger }: { caseId: string; refreshTrigger?: number }) {
   const [findings,   setFindings]   = useState<Finding[]>([])
   const [loading,    setLoading]    = useState(true)
   const [expanded,   setExpanded]   = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadFindings = useCallback(() => {
     listFindings(caseId)
       .then(d => setFindings(d.findings ?? []))
       .catch(() => setFindings([]))
       .finally(() => setLoading(false))
   }, [caseId])
+
+  useEffect(() => { loadFindings() }, [loadFindings])
+  useEffect(() => { if (refreshTrigger) loadFindings() }, [refreshTrigger, loadFindings])
 
   const bySeverity = ["critical", "high", "medium", "low"] as const
   const counts = bySeverity.reduce((acc, s) => {
@@ -653,6 +659,8 @@ export function CaseDetailPage() {
   const [report,         setReport]         = useState<Report | null>(null)
   const [generatingRpt,  setGeneratingRpt]  = useState(false)
   const [reportErr,      setReportErr]      = useState<string | null>(null)
+  const [evidenceRefresh, setEvidenceRefresh] = useState(0)
+  const [findingRefresh,  setFindingRefresh]  = useState(0)
 
   useEffect(() => {
     if (!id) { setNotFound(true); setLoading(false); return }
@@ -665,6 +673,16 @@ export function CaseDetailPage() {
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false))
   }, [id])
+
+  // HU-25: real-time updates via SSE
+  useCaseStream(id, {
+    onTaskUpdated:     () => setEvidenceRefresh(n => n + 1),
+    onEvidenceUpdated: () => setEvidenceRefresh(n => n + 1),
+    onFindingCreated:  () => setFindingRefresh(n => n + 1),
+    onRiskUpdated: (e) => setCaseItem(prev =>
+      prev ? { ...prev, risk_score: e.risk_score, findings_count: e.findings_count } : prev
+    ),
+  })
 
   function handleEdit() {
     setDraft({})
@@ -993,10 +1011,10 @@ export function CaseDetailPage() {
               />
             )}
             {tab === "evidence" && (
-              <EvidenceTab caseId={caseItem.id} />
+              <EvidenceTab caseId={caseItem.id} refreshTrigger={evidenceRefresh} />
             )}
             {tab === "findings" && (
-              <FindingsTab caseId={caseItem.id} />
+              <FindingsTab caseId={caseItem.id} refreshTrigger={findingRefresh} />
             )}
           </div>
 

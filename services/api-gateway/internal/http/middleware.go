@@ -91,6 +91,10 @@ func authMiddleware(cfg config.Config, logger *slog.Logger, next http.Handler) h
 
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if token == "" || token == r.Header.Get("Authorization") {
+			// EventSource cannot set headers — accept token via query param for SSE endpoints.
+			token = r.URL.Query().Get("token")
+		}
+		if token == "" {
 			writeError(w, http.StatusUnauthorized, "missing_token", "Bearer token is required.")
 			return
 		}
@@ -189,6 +193,13 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(statusCode int) {
 	r.statusCode = statusCode
 	r.ResponseWriter.WriteHeader(statusCode)
+}
+
+// Flush implements http.Flusher so SSE connections work through this middleware.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func newRequestID() string {

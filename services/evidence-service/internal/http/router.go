@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/codeg/securewatch/services/evidence-service/internal/domain"
 	"github.com/codeg/securewatch/services/evidence-service/internal/storage"
 )
@@ -20,6 +22,7 @@ func NewRouter(
 	findings *storage.FindingsRepository,
 	reports *storage.ReportsRepository,
 	minioStore *storage.MinIOStore,
+	db *pgxpool.Pool,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -52,6 +55,13 @@ func NewRouter(
 	mux.HandleFunc("GET /cases/{caseId}/report", requireAuth(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			handleGetReport(w, r, reports, minioStore)
+		}),
+	).ServeHTTP)
+
+	// HU-25: real-time case event stream (SSE)
+	mux.HandleFunc("GET /cases/{caseId}/stream", requireAuth(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handleCaseStream(w, r, db)
 		}),
 	).ServeHTTP)
 
