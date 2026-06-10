@@ -7,17 +7,20 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/codeg/securewatch/services/case-service/internal/config"
 	"github.com/codeg/securewatch/services/case-service/internal/domain"
 	"github.com/codeg/securewatch/services/case-service/internal/storage"
 )
 
 // NewRouter wires all case-service routes and middleware.
-func NewRouter(cfg config.Config, logger *slog.Logger, cases *storage.CaseRepository) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger, cases *storage.CaseRepository, db *pgxpool.Pool) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", healthHandler)
 	mux.HandleFunc("GET /readyz", readyHandler)
+	mux.HandleFunc("GET /dashboard/metrics", requireAuth(dashboardMetricsHandler(db)).ServeHTTP)
 
 	// All case routes require a valid actor identity injected by the gateway.
 	auth := requireAuth

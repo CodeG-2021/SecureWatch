@@ -19,16 +19,19 @@ func NewTaskRepository(db *pgxpool.Pool) *TaskRepository {
 	return &TaskRepository{db: db}
 }
 
-// PendingEvidences returns evidences in 'uploaded' status that have no tasks yet.
-// It joins cases to inherit the priority (HU-14).
+// PendingEvidences returns evidences that need to be processed or retried:
+// - 'uploaded' with no tasks (normal path)
+// - 'classified'/'queued' whose only tasks are failed/dead_letter (retry path)
 func (r *TaskRepository) PendingEvidences(ctx context.Context) ([]domain.PendingEvidence, error) {
 	const q = `
 		SELECT e.id, e.case_id, e.file_type, c.priority
 		FROM   evidences e
 		JOIN   cases c ON c.id = e.case_id
-		WHERE  e.status = 'uploaded'
+		WHERE  e.status IN ('uploaded', 'classified', 'queued')
 		  AND  NOT EXISTS (
-		         SELECT 1 FROM tasks t WHERE t.evidence_id = e.id
+		         SELECT 1 FROM tasks t
+		         WHERE  t.evidence_id = e.id
+		           AND  t.status NOT IN ('failed', 'dead_letter', 'cancelled')
 		       )
 		ORDER BY
 		  CASE c.priority
@@ -79,9 +82,11 @@ func (r *TaskRepository) CreateTask(ctx context.Context, pe domain.PendingEviden
 }
 
 // MarkEvidenceClassified updates evidence status to 'classified' (HU-14).
+// Only updates if still in uploaded/classified/queued to avoid overwriting completed.
 func (r *TaskRepository) MarkEvidenceClassified(ctx context.Context, evidenceID string) error {
 	_, err := r.db.Exec(ctx,
-		`UPDATE evidences SET status='classified', updated_at=NOW() WHERE id=$1`,
+		`UPDATE evidences SET status='classified', updated_at=NOW()
+		 WHERE id=$1 AND status IN ('uploaded','classified','queued')`,
 		evidenceID,
 	)
 	return err

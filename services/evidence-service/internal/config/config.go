@@ -14,11 +14,12 @@ type Config struct {
 	DatabaseURL string
 
 	// MinIO / S3
-	MinIOEndpoint  string
-	MinIOAccessKey string
-	MinIOSecretKey string
-	MinIOBucket    string
-	MinIOUseSSL    bool
+	MinIOEndpoint       string
+	MinIOPublicEndpoint string // externally reachable endpoint for presigned URLs
+	MinIOAccessKey      string
+	MinIOSecretKey      string
+	MinIOBucket         string
+	MinIOUseSSL         bool
 }
 
 // Load reads configuration from environment variables.
@@ -29,11 +30,12 @@ func Load() Config {
 		LogLevel:    strings.ToLower(getEnv("LOG_LEVEL", "info")),
 		DatabaseURL: getEnv("DATABASE_URL", ""),
 
-		MinIOEndpoint:  getEnv("MINIO_ENDPOINT", "minio:9000"),
-		MinIOAccessKey: getEnv("MINIO_ACCESS_KEY", ""),
-		MinIOSecretKey: getEnv("MINIO_SECRET_KEY", ""),
-		MinIOBucket:    getEnv("MINIO_BUCKET_EVIDENCE", "securewatch-evidence"),
-		MinIOUseSSL:    getBool("MINIO_USE_SSL", false),
+		MinIOEndpoint:       getEnv("MINIO_ENDPOINT", "minio:9000"),
+		MinIOPublicEndpoint: getEnv("MINIO_PUBLIC_ENDPOINT", "localhost:9000"),
+		MinIOAccessKey:      getEnv("MINIO_ACCESS_KEY", ""),
+		MinIOSecretKey:      getEnv("MINIO_SECRET_KEY", ""),
+		MinIOBucket:         getEnv("MINIO_BUCKET_EVIDENCE", "securewatch-evidence"),
+		MinIOUseSSL:         getBool("MINIO_USE_SSL", false),
 	}
 }
 

@@ -15,7 +15,12 @@ import (
 )
 
 // NewRouter builds and returns the HTTP mux for the evidence service.
-func NewRouter(evidences *storage.EvidenceRepository, minioStore *storage.MinIOStore) http.Handler {
+func NewRouter(
+	evidences *storage.EvidenceRepository,
+	findings *storage.FindingsRepository,
+	reports *storage.ReportsRepository,
+	minioStore *storage.MinIOStore,
+) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /cases/{caseId}/evidences", requireAuth(
@@ -27,6 +32,26 @@ func NewRouter(evidences *storage.EvidenceRepository, minioStore *storage.MinIOS
 	mux.HandleFunc("GET /cases/{caseId}/evidences", requireAuth(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			handleList(w, r, evidences)
+		}),
+	).ServeHTTP)
+
+	mux.HandleFunc("GET /cases/{caseId}/findings", requireAuth(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handleListFindings(w, r, findings)
+		}),
+	).ServeHTTP)
+
+	// HU-22: generate report
+	mux.HandleFunc("POST /cases/{caseId}/report", requireAuth(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handleGenerateReport(w, r, reports, minioStore)
+		}),
+	).ServeHTTP)
+
+	// HU-23: get latest report metadata + presigned URL
+	mux.HandleFunc("GET /cases/{caseId}/report", requireAuth(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handleGetReport(w, r, reports, minioStore)
 		}),
 	).ServeHTTP)
 
@@ -159,6 +184,23 @@ func handleList(w http.ResponseWriter, r *http.Request, evidences *storage.Evide
 		list = []domain.Evidence{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"evidences": list, "total": len(list)})
+}
+
+// ─── Findings handler ─────────────────────────────────────────────────────────
+
+func handleListFindings(w http.ResponseWriter, r *http.Request, findings *storage.FindingsRepository) {
+	caseID     := r.PathValue("caseId")
+	evidenceID := r.URL.Query().Get("evidence_id")
+
+	list, err := findings.ListByCaseID(r.Context(), caseID, evidenceID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list findings"})
+		return
+	}
+	if list == nil {
+		list = []domain.Finding{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"findings": list, "total": len(list)})
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -11,20 +13,40 @@ import (
 
 // MinIOStore wraps a MinIO client for evidence object storage.
 type MinIOStore struct {
-	client *minio.Client
-	bucket string
+	client        *minio.Client // internal endpoint — used for PutObject, BucketExists, etc.
+	presignClient *minio.Client // public endpoint — used only for presigned URLs so signatures are browser-valid
+	bucket        string
 }
 
 // NewMinIOStore initialises the MinIO client and ensures the target bucket exists.
-func NewMinIOStore(ctx context.Context, endpoint, accessKey, secretKey, bucket string, useSSL bool) (*MinIOStore, error) {
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("minio.New: %w", err)
+// publicEndpoint must be browser-reachable (e.g. "localhost:9000") so presigned URL
+// signatures are computed against the correct host.
+func NewMinIOStore(ctx context.Context, endpoint, publicEndpoint, accessKey, secretKey, bucket string, useSSL bool) (*MinIOStore, error) {
+	newClient := func(ep string) (*minio.Client, error) {
+		return minio.New(ep, &minio.Options{
+			Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+			Secure: useSSL,
+			// Region must be set explicitly so PresignedGetObject never makes a
+			// GetBucketLocation network call (which would fail for the public
+			// endpoint since it is not reachable from inside the container).
+			Region: "us-east-1",
+		})
 	}
-	store := &MinIOStore{client: client, bucket: bucket}
+
+	client, err := newClient(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("minio.New (internal): %w", err)
+	}
+
+	if publicEndpoint == "" {
+		publicEndpoint = endpoint
+	}
+	presignClient, err := newClient(publicEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("minio.New (public): %w", err)
+	}
+
+	store := &MinIOStore{client: client, presignClient: presignClient, bucket: bucket}
 	if err := store.EnsureBucket(ctx); err != nil {
 		return nil, err
 	}
@@ -56,6 +78,16 @@ func (s *MinIOStore) PutObject(ctx context.Context, storagePath, contentType str
 		return fmt.Errorf("minio PutObject: %w", err)
 	}
 	return nil
+}
+
+// PresignedGetURL generates a temporary download URL signed against the public endpoint
+// so browsers can open the URL directly without DNS resolution issues (HU-23).
+func (s *MinIOStore) PresignedGetURL(ctx context.Context, storagePath string, expiry time.Duration) (string, error) {
+	u, err := s.presignClient.PresignedGetObject(ctx, s.bucket, storagePath, expiry, url.Values{})
+	if err != nil {
+		return "", fmt.Errorf("minio presign: %w", err)
+	}
+	return u.String(), nil
 }
 
 // Bucket returns the configured bucket name.

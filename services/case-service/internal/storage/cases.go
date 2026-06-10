@@ -60,6 +60,8 @@ func (r *CaseRepository) List(ctx context.Context, status, priority, search stri
 			u1.name   AS created_by_name,
 			c.assigned_to,
 			u2.name   AS assigned_to_name,
+			c.risk_score,
+			c.findings_count,
 			c.created_at,
 			c.updated_at,
 			c.closed_at
@@ -104,6 +106,8 @@ func (r *CaseRepository) FindByID(ctx context.Context, id string) (domain.Case, 
 			u1.name   AS created_by_name,
 			c.assigned_to,
 			u2.name   AS assigned_to_name,
+			c.risk_score,
+			c.findings_count,
 			c.created_at,
 			c.updated_at,
 			c.closed_at
@@ -186,6 +190,7 @@ func scanCaseFull(s scanner) (domain.Case, error) {
 		&c.ID, &c.Title, &c.Description, &c.Priority, &c.Status,
 		&c.CreatedBy, &c.CreatedByName,
 		&c.AssignedTo, &c.AssignedToName,
+		&c.RiskScore, &c.FindingsCount,
 		&c.CreatedAt, &c.UpdatedAt, &c.ClosedAt,
 	)
 	return c, err

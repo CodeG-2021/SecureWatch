@@ -42,6 +42,7 @@ func main() {
 	minioStore, err := storage.NewMinIOStore(
 		context.Background(),
 		cfg.MinIOEndpoint,
+		cfg.MinIOPublicEndpoint,
 		cfg.MinIOAccessKey,
 		cfg.MinIOSecretKey,
 		cfg.MinIOBucket,
@@ -55,9 +56,11 @@ func main() {
 
 	// ── Repositories ──────────────────────────────────────────────────────────
 	evidenceRepo := storage.NewEvidenceRepository(db)
+	findingsRepo := storage.NewFindingsRepository(db)
+	reportsRepo  := storage.NewReportsRepository(db)
 
 	// ── HTTP server ───────────────────────────────────────────────────────────
-	router := apphttp.NewRouter(evidenceRepo, minioStore)
+	router := apphttp.NewRouter(evidenceRepo, findingsRepo, reportsRepo, minioStore)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

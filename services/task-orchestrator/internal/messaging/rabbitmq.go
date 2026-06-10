@@ -36,9 +36,10 @@ var queueNames = []string{
 
 // Publisher manages the AMQP connection and publishes task messages.
 type Publisher struct {
-	conn    *amqp.Connection
-	channel *amqp.Channel
-	url     string
+	conn     *amqp.Connection
+	channel  *amqp.Channel
+	confirms chan amqp.Confirmation // single persistent confirms channel
+	url      string
 }
 
 // NewPublisher connects to RabbitMQ with retries and declares all topology.
@@ -80,8 +81,13 @@ func (p *Publisher) connect() error {
 		return fmt.Errorf("rabbitmq confirm mode: %w", err)
 	}
 
-	p.conn = conn
-	p.channel = ch
+	// Single persistent confirms channel — registered once, never stacked.
+	confirms := make(chan amqp.Confirmation, 32)
+	ch.NotifyPublish(confirms)
+
+	p.conn     = conn
+	p.channel  = ch
+	p.confirms = confirms
 	return nil
 }
 
@@ -148,7 +154,7 @@ func priorityValue(priority string) uint8 {
 }
 
 // Publish sends a TaskMessage to the appropriate queue (HU-15).
-// It uses publisher confirms to guarantee delivery.
+// It uses publisher confirms to guarantee delivery, reconnecting on channel errors.
 func (p *Publisher) Publish(ctx context.Context, msg domain.TaskMessage) error {
 	body, err := json.Marshal(msg)
 	if err != nil {
@@ -159,7 +165,7 @@ func (p *Publisher) Publish(ctx context.Context, msg domain.TaskMessage) error {
 
 	publishing := amqp.Publishing{
 		ContentType:  "application/json",
-		DeliveryMode: amqp.Persistent, // survive broker restart
+		DeliveryMode: amqp.Persistent,
 		Priority:     priorityValue(msg.Priority),
 		Body:         body,
 		MessageId:    msg.TaskID,
@@ -171,30 +177,72 @@ func (p *Publisher) Publish(ctx context.Context, msg domain.TaskMessage) error {
 		},
 	}
 
-	// Publish with confirms
-	confirms := p.channel.NotifyPublish(make(chan amqp.Confirmation, 1))
+	// Attempt publish with one automatic reconnect on failure.
+	for attempt := 0; attempt < 2; attempt++ {
+		pubErr := p.publishOnce(ctx, routingKey, publishing, msg.TaskID)
+		if pubErr == nil {
+			return nil
+		}
+		if attempt == 0 {
+			slog.Warn("publish failed, reconnecting channel", "error", pubErr)
+			if reconnErr := p.reconnectChannel(); reconnErr != nil {
+				return fmt.Errorf("publish failed and reconnect failed: %w", reconnErr)
+			}
+			continue
+		}
+		return pubErr
+	}
+	return nil
+}
+
+func (p *Publisher) publishOnce(ctx context.Context, routingKey string, pub amqp.Publishing, taskID string) error {
+	// Drain any stale ACKs from previous publishes before sending a new one.
+	for len(p.confirms) > 0 {
+		<-p.confirms
+	}
 
 	if err := p.channel.PublishWithContext(ctx,
 		ExchangeName, routingKey,
-		true,  // mandatory: return if no queue bound
-		false, // immediate: deprecated, keep false
-		publishing,
+		true, false, pub,
 	); err != nil {
 		return fmt.Errorf("publish task: %w", err)
 	}
 
-	// Wait for broker ack (HU-15: "Confirmar publicación")
 	select {
-	case confirm := <-confirms:
+	case confirm := <-p.confirms:
 		if !confirm.Ack {
-			return fmt.Errorf("broker nacked task %s", msg.TaskID)
+			return fmt.Errorf("broker nacked task %s", taskID)
 		}
+		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-time.After(5 * time.Second):
-		return fmt.Errorf("publish confirm timeout for task %s", msg.TaskID)
+		return fmt.Errorf("publish confirm timeout for task %s", taskID)
 	}
+}
 
+// reconnectChannel replaces the AMQP channel and confirms channel with fresh ones.
+func (p *Publisher) reconnectChannel() error {
+	if p.channel != nil {
+		_ = p.channel.Close()
+	}
+	if p.conn == nil || p.conn.IsClosed() {
+		if err := p.connect(); err != nil {
+			return err
+		}
+		return p.declareTopology()
+	}
+	ch, err := p.conn.Channel()
+	if err != nil {
+		return fmt.Errorf("open channel: %w", err)
+	}
+	if err := ch.Confirm(false); err != nil {
+		return fmt.Errorf("confirm mode: %w", err)
+	}
+	confirms := make(chan amqp.Confirmation, 32)
+	ch.NotifyPublish(confirms)
+	p.channel  = ch
+	p.confirms = confirms
 	return nil
 }
 
