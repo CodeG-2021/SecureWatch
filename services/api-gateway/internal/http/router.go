@@ -32,6 +32,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	mux.Handle("GET /api/v1/cases/{id}",      caseServiceProxyDynamic(cfg, logger))
 	mux.Handle("PATCH /api/v1/cases/{id}",    caseServiceProxyDynamic(cfg, logger))
 
+	// ── evidence-service ──────────────────────────────────────────────────────
+	mux.Handle("POST /api/v1/cases/{caseId}/evidences", evidenceServiceProxyDynamic(cfg, logger))
+	mux.Handle("GET /api/v1/cases/{caseId}/evidences",  evidenceServiceProxyDynamic(cfg, logger))
+
 	handler := recoverMiddleware(logger, mux)
 	handler = authMiddleware(cfg, logger, handler)
 	handler = loggingMiddleware(logger, handler)
@@ -82,6 +86,8 @@ func apiIndexHandler(w http.ResponseWriter, r *http.Request) {
 			"GET /api/v1/cases",
 			"GET /api/v1/cases/{id}",
 			"PATCH /api/v1/cases/{id}",
+			"POST /api/v1/cases/{caseId}/evidences",
+			"GET /api/v1/cases/{caseId}/evidences",
 		},
 	})
 }
@@ -188,6 +194,30 @@ func caseServiceProxyDynamic(cfg config.Config, logger *slog.Logger) http.Handle
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		logger.Error("case service proxy failed", "error", err)
 		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Case service is unavailable.")
+	}
+	return proxy
+}
+
+// evidenceServiceProxyDynamic forwards /api/v1/cases/{caseId}/evidences → evidence-service.
+func evidenceServiceProxyDynamic(cfg config.Config, logger *slog.Logger) http.Handler {
+	target, err := url.Parse(cfg.EvidenceServiceURL)
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger.Error("invalid evidence service url", "url", cfg.EvidenceServiceURL, "error", err)
+			writeError(w, http.StatusInternalServerError, "invalid_upstream", "Evidence service is not configured.")
+		})
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	orig := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		orig(r)
+		caseID := r.PathValue("caseId")
+		r.URL.Path = "/cases/" + caseID + "/evidences"
+		r.Host = target.Host
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error("evidence service proxy failed", "error", err)
+		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Evidence service is unavailable.")
 	}
 	return proxy
 }

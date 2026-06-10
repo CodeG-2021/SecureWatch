@@ -33,6 +33,7 @@ services:
       CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS:-Authorization,Content-Type,X-Request-ID}
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:8081}
       CASE_SERVICE_URL: ${CASE_SERVICE_URL:-http://case-service:8082}
+      EVIDENCE_SERVICE_URL: ${EVIDENCE_SERVICE_URL:-http://evidence-service:8083}
     ports:
       - "${API_GATEWAY_PORT:-8080}:8080"
     healthcheck:
@@ -45,6 +46,38 @@ services:
         condition: service_healthy
       case-service:
         condition: service_healthy
+      evidence-service:
+        condition: service_healthy
+    networks:
+      - securewatch
+
+  evidence-service:
+    build:
+      context: ./services/evidence-service
+      dockerfile: Dockerfile
+    container_name: securewatch-evidence-service
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      EVIDENCE_SERVICE_PORT: ${EVIDENCE_SERVICE_PORT:-8083}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      DATABASE_URL: postgres://${POSTGRES_USER:-securewatch}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-securewatch}?sslmode=disable
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-securewatch}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_EVIDENCE: ${MINIO_BUCKET_EVIDENCE:-securewatch-evidence}
+      MINIO_USE_SSL: "false"
+    ports:
+      - "${EVIDENCE_SERVICE_PORT:-8083}:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8083/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - securewatch
 
@@ -109,6 +142,7 @@ services:
       - ./infra/database/init/001_create_users.sql:/docker-entrypoint-initdb.d/001_create_users.sql:ro
       - ./infra/database/init/002_add_audit_log.sql:/docker-entrypoint-initdb.d/002_add_audit_log.sql:ro
       - ./infra/database/init/003_create_cases.sql:/docker-entrypoint-initdb.d/003_create_cases.sql:ro
+      - ./infra/database/init/004_create_evidences.sql:/docker-entrypoint-initdb.d/004_create_evidences.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-securewatch} -d ${POSTGRES_DB:-securewatch}"]
       interval: 10s

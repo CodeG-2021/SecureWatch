@@ -119,3 +119,64 @@ export async function updateCase(id: string, payload: UpdateCasePayload) {
   })
   return handleResponse<{ case: Case }>(res)
 }
+
+// ─── Evidence ──────────────────────────────────────────────────────────────────
+
+export type Evidence = {
+  id:                string
+  case_id:           string
+  original_filename: string
+  file_type:         "text" | "image" | "audio" | "document" | "archive" | "unknown"
+  mime_type:         string
+  storage_path:      string
+  size_bytes:        number
+  hash_sha256:       string
+  status:            "uploaded" | "classified" | "queued" | "processing" | "completed" | "failed"
+  uploaded_by:       string
+  uploaded_by_name?: string
+  created_at:        string
+  updated_at:        string
+}
+
+/** Upload a file as evidence for a case. Calls `onProgress` with 0–100. */
+export function uploadEvidence(
+  caseId: string,
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<Evidence> {
+  return new Promise((resolve, reject) => {
+    const token = getToken()
+    const form = new FormData()
+    form.append("file", file)
+
+    const xhr = new XMLHttpRequest()
+    xhr.open("POST", `${BASE}/api/v1/cases/${caseId}/evidences`)
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`)
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    }
+
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText)
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(data as Evidence)
+        } else {
+          reject(new Error(data?.error ?? `Upload failed (${xhr.status})`))
+        }
+      } catch {
+        reject(new Error("Invalid response from server"))
+      }
+    }
+    xhr.onerror = () => reject(new Error("Network error during upload"))
+    xhr.send(form)
+  })
+}
+
+export async function listEvidences(caseId: string) {
+  const res = await fetch(`${BASE}/api/v1/cases/${caseId}/evidences`, { headers: authHeaders() })
+  return handleResponse<{ evidences: Evidence[]; total: number }>(res)
+}
