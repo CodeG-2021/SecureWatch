@@ -10,6 +10,7 @@ type Config struct {
 	Port        string
 	LogLevel    string
 	DatabaseURL string
+	JWTSecret   string
 }
 
 func Load() Config {
@@ -17,7 +18,8 @@ func Load() Config {
 		AppEnv:      getEnv("APP_ENV", "local"),
 		Port:        getEnv("AUTH_SERVICE_PORT", "8081"),
 		LogLevel:    strings.ToLower(getEnv("LOG_LEVEL", "info")),
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://securewatch:securewatch@postgres:5432/securewatch?sslmode=disable"),
+		DatabaseURL: getEnv("DATABASE_URL", ""),
+		JWTSecret:   getEnv("JWT_SECRET", ""),
 	}
 }
 

@@ -20,6 +20,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1", apiIndexHandler)
 	mux.HandleFunc("GET /api/v1/me", meHandler)
 	mux.Handle("POST /api/v1/auth/register", authServiceProxy(cfg, logger, "/auth/register"))
+	mux.Handle("POST /api/v1/auth/login", authServiceProxy(cfg, logger, "/auth/login"))
 
 	handler := recoverMiddleware(logger, mux)
 	handler = authMiddleware(cfg, logger, handler)
@@ -64,6 +65,7 @@ func apiIndexHandler(w http.ResponseWriter, r *http.Request) {
 			"GET /api/v1",
 			"GET /api/v1/me",
 			"POST /api/v1/auth/register",
+			"POST /api/v1/auth/login",
 		},
 	})
 }
