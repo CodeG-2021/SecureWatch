@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/codeg/securewatch/services/auth-service/internal/config"
-	authhttp "github.com/codeg/securewatch/services/auth-service/internal/http"
-	"github.com/codeg/securewatch/services/auth-service/internal/storage"
+	"github.com/codeg/securewatch/services/case-service/internal/config"
+	casehttp "github.com/codeg/securewatch/services/case-service/internal/http"
+	"github.com/codeg/securewatch/services/case-service/internal/storage"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           authhttp.NewRouter(cfg, logger, storage.NewUserRepository(db), storage.NewAuditRepository(db)),
+		Handler:           casehttp.NewRouter(cfg, logger, storage.NewCaseRepository(db)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -36,9 +36,9 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("auth service starting", "addr", server.Addr, "env", cfg.AppEnv)
+		logger.Info("case service starting", "addr", server.Addr, "env", cfg.AppEnv)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("auth service failed", "error", err)
+			logger.Error("case service failed", "error", err)
 			os.Exit(1)
 		}
 	}()
@@ -50,9 +50,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	logger.Info("auth service shutting down")
+	logger.Info("case service shutting down")
 	if err := server.Shutdown(ctx); err != nil {
-		logger.Error("auth service shutdown failed", "error", err)
+		logger.Error("case service shutdown failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -69,6 +69,5 @@ func newLogger(level string) *slog.Logger {
 	default:
 		slogLevel = slog.LevelInfo
 	}
-
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slogLevel}))
 }

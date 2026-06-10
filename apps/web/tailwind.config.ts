@@ -38,7 +38,9 @@ const config = {
         DEFAULT: "0.125rem",
         lg: "0.25rem",
         xl: "0.5rem",
-        full: "0.75rem",
+        "2xl": "0.75rem",
+        "3xl": "1rem",
+        full: "9999px",
       },
       fontFamily: {
         sans: ["Poppins", "ui-sans-serif", "system-ui"],

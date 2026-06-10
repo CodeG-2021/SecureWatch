@@ -102,6 +102,18 @@ func authMiddleware(cfg config.Config, logger *slog.Logger, next http.Handler) h
 			return
 		}
 
+		// Forward identity to upstream services via trusted headers
+		r = r.Clone(r.Context())
+		if sub, ok := claims["sub"].(string); ok {
+			r.Header.Set("X-User-ID", sub)
+		}
+		if email, ok := claims["email"].(string); ok {
+			r.Header.Set("X-User-Email", email)
+		}
+		if role, ok := claims["role"].(string); ok {
+			r.Header.Set("X-User-Role", role)
+		}
+
 		ctx := context.WithValue(r.Context(), claimsKey, claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
