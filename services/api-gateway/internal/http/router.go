@@ -35,6 +35,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	// ── evidence-service ──────────────────────────────────────────────────────
 	mux.Handle("POST /api/v1/cases/{caseId}/evidences", evidenceServiceProxyDynamic(cfg, logger))
 	mux.Handle("GET /api/v1/cases/{caseId}/evidences",  evidenceServiceProxyDynamic(cfg, logger))
+	mux.Handle("GET /api/v1/cases/{caseId}/findings",   evidenceServiceCaseProxy(cfg, logger, "findings"))
+	mux.Handle("POST /api/v1/cases/{caseId}/report",    evidenceServiceCaseProxy(cfg, logger, "report"))
+	mux.Handle("GET /api/v1/cases/{caseId}/report",     evidenceServiceCaseProxy(cfg, logger, "report"))
+
+	// ── dashboard metrics (HU-24) ─────────────────────────────────────────────
+	mux.Handle("GET /api/v1/dashboard/metrics", caseServiceProxy(cfg, logger, "/dashboard/metrics"))
 
 	handler := recoverMiddleware(logger, mux)
 	handler = authMiddleware(cfg, logger, handler)
@@ -200,6 +206,11 @@ func caseServiceProxyDynamic(cfg config.Config, logger *slog.Logger) http.Handle
 
 // evidenceServiceProxyDynamic forwards /api/v1/cases/{caseId}/evidences → evidence-service.
 func evidenceServiceProxyDynamic(cfg config.Config, logger *slog.Logger) http.Handler {
+	return evidenceServiceCaseProxy(cfg, logger, "evidences")
+}
+
+// evidenceServiceCaseProxy proxies /api/v1/cases/{caseId}/<resource> → evidence-service.
+func evidenceServiceCaseProxy(cfg config.Config, logger *slog.Logger, resource string) http.Handler {
 	target, err := url.Parse(cfg.EvidenceServiceURL)
 	if err != nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -212,11 +223,12 @@ func evidenceServiceProxyDynamic(cfg config.Config, logger *slog.Logger) http.Ha
 	proxy.Director = func(r *http.Request) {
 		orig(r)
 		caseID := r.PathValue("caseId")
-		r.URL.Path = "/cases/" + caseID + "/evidences"
+		r.URL.Path = "/cases/" + caseID + "/" + resource
+		r.URL.RawQuery = r.URL.RawQuery
 		r.Host = target.Host
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		logger.Error("evidence service proxy failed", "error", err)
+		logger.Error("evidence service proxy failed", "resource", resource, "error", err)
 		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Evidence service is unavailable.")
 	}
 	return proxy

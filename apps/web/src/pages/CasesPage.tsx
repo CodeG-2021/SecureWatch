@@ -51,6 +51,24 @@ function statusBadge(s: Status) {
   )
 }
 
+function riskBadge(score: number, findingsCount: number) {
+  if (findingsCount === 0) return null
+  const pct = Math.round(score)
+  const { bar, text } =
+    pct >= 75 ? { bar: "bg-red-500",    text: "text-red-700"    } :
+    pct >= 50 ? { bar: "bg-orange-500", text: "text-orange-700" } :
+    pct >= 25 ? { bar: "bg-amber-500",  text: "text-amber-700"  } :
+                { bar: "bg-blue-400",   text: "text-blue-700"   }
+  return (
+    <div className="flex items-center gap-1.5 mt-1" title={`Risk score: ${score.toFixed(1)} · ${findingsCount} finding${findingsCount !== 1 ? "s" : ""}`}>
+      <div className="w-16 h-1.5 rounded-full bg-outline-variant/30 overflow-hidden">
+        <div className={`h-full rounded-full ${bar} transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className={`text-[10px] font-semibold ${text}`}>{pct}%</span>
+    </div>
+  )
+}
+
 function priorityBorderClass(p: Priority) {
   const map: Record<Priority, string> = {
     critical: "priority-critical",
@@ -79,6 +97,7 @@ const MOCK_CASES: Case[] = [
     priority: "critical", status: "in_progress",
     created_by: "u1", created_by_name: "Ana García",
     assigned_to: "u2", assigned_to_name: "Luis Mora",
+    risk_score: 87.5, findings_count: 12,
     created_at: "2026-05-28T10:00:00Z", updated_at: "2026-06-01T15:00:00Z",
   },
   {
@@ -86,6 +105,7 @@ const MOCK_CASES: Case[] = [
     description: "Endpoint protection flagged Trojan.GenericKD in document macro.",
     priority: "high", status: "open",
     created_by: "u1", created_by_name: "Ana García",
+    risk_score: 62.5, findings_count: 5,
     created_at: "2026-06-01T09:00:00Z", updated_at: "2026-06-01T09:00:00Z",
   },
   {
@@ -94,6 +114,7 @@ const MOCK_CASES: Case[] = [
     priority: "high", status: "open",
     created_by: "u3", created_by_name: "Sara Pérez",
     assigned_to: "u2", assigned_to_name: "Luis Mora",
+    risk_score: 43.75, findings_count: 8,
     created_at: "2026-06-03T14:30:00Z", updated_at: "2026-06-03T14:30:00Z",
   },
   {
@@ -101,6 +122,7 @@ const MOCK_CASES: Case[] = [
     description: "5 employees received targeted spear-phishing emails, 2 clicked links.",
     priority: "medium", status: "closed",
     created_by: "u2", created_by_name: "Luis Mora",
+    risk_score: 25, findings_count: 3,
     created_at: "2026-05-20T11:00:00Z", updated_at: "2026-05-25T16:00:00Z",
     closed_at: "2026-05-25T16:00:00Z",
   },
@@ -109,6 +131,7 @@ const MOCK_CASES: Case[] = [
     description: "Service account accessed S3 bucket outside of business hours.",
     priority: "low", status: "archived",
     created_by: "u3", created_by_name: "Sara Pérez",
+    risk_score: 0, findings_count: 0,
     created_at: "2026-04-10T08:00:00Z", updated_at: "2026-04-30T12:00:00Z",
     closed_at: "2026-04-30T12:00:00Z",
   },
@@ -452,7 +475,7 @@ export function CasesPage() {
                         {c.description}
                       </p>
                     )}
-                    <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex items-center gap-3 mt-1.5">
                       {c.assigned_to_name ? (
                         <span className="inline-flex items-center gap-1 text-[11px] text-on-surface-variant">
                           <span className="w-4 h-4 rounded-full bg-secondary/20 border border-secondary/30
@@ -464,6 +487,7 @@ export function CasesPage() {
                       ) : (
                         <span className="text-[11px] text-outline">Unassigned</span>
                       )}
+                      {riskBadge(c.risk_score ?? 0, c.findings_count ?? 0)}
                     </div>
                   </div>
 

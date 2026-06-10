@@ -26,6 +26,8 @@ export type Case = {
   created_by_name?: string
   assigned_to?:     string
   assigned_to_name?: string
+  risk_score:       number
+  findings_count:   number
   created_at:       string
   updated_at:       string
   closed_at?:       string
@@ -179,4 +181,89 @@ export function uploadEvidence(
 export async function listEvidences(caseId: string) {
   const res = await fetch(`${BASE}/api/v1/cases/${caseId}/evidences`, { headers: authHeaders() })
   return handleResponse<{ evidences: Evidence[]; total: number }>(res)
+}
+
+// ─── Findings ──────────────────────────────────────────────────────────────────
+
+export type Finding = {
+  id:                string
+  case_id:           string
+  evidence_id:       string
+  task_id?:          string
+  finding_type:      string
+  title:             string
+  description?:      string
+  severity:          "low" | "medium" | "high" | "critical"
+  data:              Record<string, unknown>
+  created_at:        string
+  evidence_filename?: string
+}
+
+export async function listFindings(caseId: string, evidenceId?: string) {
+  const qs = evidenceId ? `?evidence_id=${evidenceId}` : ""
+  const res = await fetch(`${BASE}/api/v1/cases/${caseId}/findings${qs}`, { headers: authHeaders() })
+  return handleResponse<{ findings: Finding[]; total: number }>(res)
+}
+
+// ─── Reports ───────────────────────────────────────────────────────────────────
+
+export type ReportSummary = {
+  case_title:      string
+  priority:        string
+  status:          string
+  risk_score:      number
+  evidences_count: number
+  findings_count:  number
+  critical:        number
+  high:            number
+  medium:          number
+  low:             number
+}
+
+export type Report = {
+  id:              string
+  case_id:         string
+  generated_by:    string
+  storage_path:    string
+  file_size_bytes: number
+  summary:         ReportSummary
+  created_at:      string
+  download_url?:   string
+}
+
+export async function generateReport(caseId: string) {
+  const res = await fetch(`${BASE}/api/v1/cases/${caseId}/report`, {
+    method:  "POST",
+    headers: authHeaders(),
+  })
+  return handleResponse<{ report: Report }>(res)
+}
+
+export async function getReport(caseId: string) {
+  const res = await fetch(`${BASE}/api/v1/cases/${caseId}/report`, { headers: authHeaders() })
+  if (res.status === 404) return null
+  return handleResponse<{ report: Report }>(res)
+}
+
+// ─── Dashboard metrics (HU-24) ─────────────────────────────────────────────────
+
+export type DashboardMetrics = {
+  cases: {
+    total: number; open: number; in_progress: number
+    closed: number; archived: number; critical: number
+  }
+  evidences: {
+    total: number; completed: number; processing: number; failed: number; queued: number
+  }
+  findings: {
+    total: number; critical: number; high: number; medium: number; low: number
+  }
+  tasks: {
+    total: number; completed: number; failed: number; processing: number; pending: number
+  }
+}
+
+export async function getDashboardMetrics() {
+  const res = await fetch(`${BASE}/api/v1/dashboard/metrics`, { headers: authHeaders() })
+  return handleResponse<DashboardMetrics>(res)
 }

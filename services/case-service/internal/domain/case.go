@@ -17,6 +17,8 @@ type Case struct {
 	CreatedByName  string     `json:"created_by_name,omitempty"`
 	AssignedTo     *string    `json:"assigned_to,omitempty"`
 	AssignedToName *string    `json:"assigned_to_name,omitempty"`
+	RiskScore      float64    `json:"risk_score"`
+	FindingsCount  int        `json:"findings_count"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	ClosedAt       *time.Time `json:"closed_at,omitempty"`

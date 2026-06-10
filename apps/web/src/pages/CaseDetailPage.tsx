@@ -10,7 +10,6 @@ import {
   DocumentTextIcon,
   BeakerIcon,
   MagnifyingGlassIcon,
-  DocumentChartBarIcon,
   ChevronDownIcon,
   ExclamationTriangleIcon,
   ArchiveBoxIcon,
@@ -20,9 +19,11 @@ import {
   MusicalNoteIcon,
   ArchiveBoxIcon as ArchiveFileIcon,
   CodeBracketIcon,
+  ArrowDownTrayIcon,
+  DocumentArrowDownIcon,
 } from "@heroicons/react/24/outline"
 import { AppLayout } from "../components/AppLayout"
-import { type Case, type Evidence, getCase, updateCase, uploadEvidence, listEvidences } from "../lib/api"
+import { type Case, type Evidence, type Finding, type Report, getCase, updateCase, uploadEvidence, listEvidences, listFindings, generateReport, getReport } from "../lib/api"
 
 // ─── Visual helpers ───────────────────────────────────────────────────────────
 
@@ -76,30 +77,16 @@ function formatDateTime(iso?: string) {
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "evidence" | "findings" | "report"
+type Tab = "overview" | "evidence" | "findings"
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "overview",  label: "Overview",  icon: <DocumentTextIcon      className="w-4 h-4" /> },
   { id: "evidence",  label: "Evidence",  icon: <BeakerIcon             className="w-4 h-4" /> },
   { id: "findings",  label: "Findings",  icon: <MagnifyingGlassIcon    className="w-4 h-4" /> },
-  { id: "report",    label: "Report",    icon: <DocumentChartBarIcon   className="w-4 h-4" /> },
 ]
 
 // ─── Placeholder tab content ──────────────────────────────────────────────────
 
-function PlaceholderTab({ label, icon }: { label: string; icon: React.ReactNode }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-surface-container flex items-center justify-center">
-        <span className="text-outline [&>svg]:w-7 [&>svg]:h-7">{icon}</span>
-      </div>
-      <div>
-        <p className="font-semibold text-on-surface">{label} coming soon</p>
-        <p className="text-sm text-on-surface-variant mt-1">This section will be available in a future update.</p>
-      </div>
-    </div>
-  )
-}
 
 // ─── Evidence helpers ─────────────────────────────────────────────────────────
 
@@ -319,6 +306,172 @@ function EvidenceTab({ caseId }: { caseId: string }) {
   )
 }
 
+// ─── Findings tab ─────────────────────────────────────────────────────────────
+
+function severityConfig(s: Finding["severity"]) {
+  const map = {
+    critical: { cls: "bg-red-50 text-red-700 border border-red-200",    dot: "bg-red-500",    label: "Critical" },
+    high:     { cls: "bg-orange-50 text-orange-700 border border-orange-200", dot: "bg-orange-500", label: "High" },
+    medium:   { cls: "bg-amber-50 text-amber-700 border border-amber-200",   dot: "bg-amber-500",  label: "Medium" },
+    low:      { cls: "bg-blue-50 text-blue-700 border border-blue-200",      dot: "bg-blue-400",   label: "Low" },
+  }
+  return map[s] ?? map.low
+}
+
+function findingTypeLabel(t: string) {
+  const labels: Record<string, string> = {
+    transcription:          "Transcription",
+    transcription_warning:  "Audio Warning",
+    risk:                   "Risk Match",
+    entities:               "Entities",
+    keywords:               "Keywords",
+    image_objects:          "Objects Detected",
+    image_metadata:         "Image Metadata",
+    document_metadata:      "Document Metadata",
+    document_text:          "Document Text",
+    archive_contents:       "Archive Contents",
+    suspicious_file:        "Suspicious File",
+  }
+  return labels[t] ?? t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function FindingsTab({ caseId }: { caseId: string }) {
+  const [findings,   setFindings]   = useState<Finding[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [expanded,   setExpanded]   = useState<string | null>(null)
+
+  useEffect(() => {
+    listFindings(caseId)
+      .then(d => setFindings(d.findings ?? []))
+      .catch(() => setFindings([]))
+      .finally(() => setLoading(false))
+  }, [caseId])
+
+  const bySeverity = ["critical", "high", "medium", "low"] as const
+  const counts = bySeverity.reduce((acc, s) => {
+    acc[s] = findings.filter(f => f.severity === s).length
+    return acc
+  }, {} as Record<string, number>)
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="skeleton h-14 rounded-xl" style={{ animationDelay: `${i * 60}ms` }} />
+        ))}
+      </div>
+    )
+  }
+
+  if (findings.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-surface-container flex items-center justify-center">
+          <MagnifyingGlassIcon className="w-7 h-7 text-outline/60" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-on-surface">No findings yet</p>
+          <p className="text-xs text-on-surface-variant mt-1">
+            Upload evidence and wait for the workers to process it.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── Summary strip ────────────────────────────────────────── */}
+      <div className="grid grid-cols-4 gap-2">
+        {bySeverity.map(s => {
+          const { cls, dot, label } = severityConfig(s)
+          return (
+            <div key={s} className={`flex flex-col items-center gap-1 p-3 rounded-xl border ${cls}`}>
+              <span className={`w-2.5 h-2.5 rounded-full ${dot}`} />
+              <span className="text-xl font-bold">{counts[s]}</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide">{label}</span>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ── Findings list ─────────────────────────────────────────── */}
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+          {findings.length} finding{findings.length !== 1 ? "s" : ""}
+        </p>
+
+        {findings.map((f, i) => {
+          const { cls, dot } = severityConfig(f.severity)
+          const isOpen = expanded === f.id
+          return (
+            <div
+              key={f.id}
+              className="row-enter rounded-xl border border-outline-variant/50 overflow-hidden"
+              style={{ animationDelay: `${i * 30}ms` }}
+            >
+              {/* Header row */}
+              <button
+                className="w-full flex items-center gap-3 px-4 py-3
+                           bg-surface-container-low/40 hover:bg-surface-container/70
+                           transition-colors text-left"
+                onClick={() => setExpanded(isOpen ? null : f.id)}
+              >
+                {/* Severity dot */}
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dot}`} />
+
+                {/* Title */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-on-surface truncate">{f.title}</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5">
+                    <span className="capitalize">{findingTypeLabel(f.finding_type)}</span>
+                    {f.evidence_filename && (
+                      <>
+                        <span className="mx-1.5 text-outline">·</span>
+                        {f.evidence_filename}
+                      </>
+                    )}
+                  </p>
+                </div>
+
+                {/* Severity badge */}
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide shrink-0 ${cls}`}>
+                  {f.severity}
+                </span>
+
+                {/* Expand chevron */}
+                <ChevronDownIcon className={`w-4 h-4 text-outline shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* Expanded detail */}
+              {isOpen && (
+                <div className="px-4 pb-4 pt-2 border-t border-outline-variant/30 bg-white space-y-3">
+                  {f.description && (
+                    <p className="text-sm text-on-surface leading-relaxed">{f.description}</p>
+                  )}
+                  {f.data && Object.keys(f.data).length > 0 && (
+                    <pre className="text-[11px] font-mono bg-surface-container-low p-3 rounded-lg
+                                    overflow-x-auto max-h-48 text-on-surface-variant leading-relaxed">
+                      {JSON.stringify(f.data, null, 2)}
+                    </pre>
+                  )}
+                  <p className="text-[10px] text-outline">
+                    {new Date(f.created_at).toLocaleString("en-US", {
+                      month: "short", day: "numeric", year: "numeric",
+                      hour: "2-digit", minute: "2-digit",
+                    })}
+                  </p>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Overview tab ─────────────────────────────────────────────────────────────
 
 interface OverviewTabProps {
@@ -489,19 +642,26 @@ export function CaseDetailPage() {
   // Extract id from path: /cases/:id
   const id = window.location.pathname.split("/cases/")[1]?.split("/")[0]
 
-  const [caseItem, setCaseItem] = useState<Case | null>(null)
-  const [loading,  setLoading]  = useState(true)
-  const [notFound, setNotFound] = useState(false)
-  const [tab,      setTab]      = useState<Tab>("overview")
-  const [editing,  setEditing]  = useState(false)
-  const [draft,    setDraft]    = useState<Partial<Case>>({})
-  const [saving,   setSaving]   = useState(false)
-  const [saveErr,  setSaveErr]  = useState<string | null>(null)
+  const [caseItem,       setCaseItem]       = useState<Case | null>(null)
+  const [loading,        setLoading]        = useState(true)
+  const [notFound,       setNotFound]       = useState(false)
+  const [tab,            setTab]            = useState<Tab>("overview")
+  const [editing,        setEditing]        = useState(false)
+  const [draft,          setDraft]          = useState<Partial<Case>>({})
+  const [saving,         setSaving]         = useState(false)
+  const [saveErr,        setSaveErr]        = useState<string | null>(null)
+  const [report,         setReport]         = useState<Report | null>(null)
+  const [generatingRpt,  setGeneratingRpt]  = useState(false)
+  const [reportErr,      setReportErr]      = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) { setNotFound(true); setLoading(false); return }
     getCase(id)
-      .then(data => setCaseItem(data.case))
+      .then(data => {
+        setCaseItem(data.case)
+        return getReport(id)
+      })
+      .then(rep => { if (rep) setReport(rep.report) })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false))
   }, [id])
@@ -516,6 +676,22 @@ export function CaseDetailPage() {
     setEditing(false)
     setDraft({})
     setSaveErr(null)
+  }
+
+  async function handleGenerateReport() {
+    if (!caseItem) return
+    setGeneratingRpt(true)
+    setReportErr(null)
+    try {
+      const data = await generateReport(caseItem.id)
+      setReport(data.report)
+      // Don't use window.open — popup blockers kill async-triggered tabs.
+      // The "Open Report" button appears immediately after generation.
+    } catch (err) {
+      setReportErr(err instanceof Error ? err.message : "Report generation failed.")
+    } finally {
+      setGeneratingRpt(false)
+    }
   }
 
   async function handleSave() {
@@ -620,15 +796,67 @@ export function CaseDetailPage() {
                     </button>
                   </>
                 ) : (
-                  <button
-                    onClick={handleEdit}
-                    className="h-9 px-4 inline-flex items-center gap-1.5 text-sm font-semibold
-                               text-on-surface border border-outline-variant rounded-xl
-                               hover:bg-surface-container transition-colors"
-                  >
-                    <PencilSquareIcon className="w-4 h-4" />
-                    Edit
-                  </button>
+                  <>
+                    {/* Report download — always visible once generated */}
+                    {report?.download_url && (
+                      <a
+                        href={report.download_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="h-9 px-4 inline-flex items-center gap-1.5 text-sm font-semibold
+                                   text-teal-700 border border-teal-300 bg-teal-50 rounded-xl
+                                   hover:bg-teal-100 transition-colors"
+                        title={`Report from ${new Date(report.created_at).toLocaleDateString()}`}
+                      >
+                        <ArrowDownTrayIcon className="w-4 h-4" />
+                        Report
+                      </a>
+                    )}
+                    {/* Generate — only when no report exists yet */}
+                    {!report && (
+                      <button
+                        onClick={handleGenerateReport}
+                        disabled={generatingRpt}
+                        className="h-9 px-4 inline-flex items-center gap-1.5 text-sm font-semibold
+                                   text-violet-700 border border-violet-300 bg-violet-50 rounded-xl
+                                   hover:bg-violet-100 transition-colors disabled:opacity-60"
+                      >
+                        {generatingRpt ? (
+                          <span className="w-4 h-4 border-2 border-violet-400/40 border-t-violet-600 rounded-full animate-spin" />
+                        ) : (
+                          <DocumentArrowDownIcon className="w-4 h-4" />
+                        )}
+                        {generatingRpt ? "Generating…" : "Generate Report"}
+                      </button>
+                    )}
+                    {/* Regenerate — only when case was updated after the last report */}
+                    {report && caseItem && new Date(caseItem.updated_at) > new Date(report.created_at) && (
+                      <button
+                        onClick={handleGenerateReport}
+                        disabled={generatingRpt}
+                        className="h-9 px-4 inline-flex items-center gap-1.5 text-sm font-semibold
+                                   text-amber-700 border border-amber-300 bg-amber-50 rounded-xl
+                                   hover:bg-amber-100 transition-colors disabled:opacity-60"
+                        title="Case was updated after the last report"
+                      >
+                        {generatingRpt ? (
+                          <span className="w-4 h-4 border-2 border-amber-400/40 border-t-amber-600 rounded-full animate-spin" />
+                        ) : (
+                          <DocumentArrowDownIcon className="w-4 h-4" />
+                        )}
+                        {generatingRpt ? "Generating…" : "Regenerate"}
+                      </button>
+                    )}
+                    <button
+                      onClick={handleEdit}
+                      className="h-9 px-4 inline-flex items-center gap-1.5 text-sm font-semibold
+                                 text-on-surface border border-outline-variant rounded-xl
+                                 hover:bg-surface-container transition-colors"
+                    >
+                      <PencilSquareIcon className="w-4 h-4" />
+                      Edit
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -636,6 +864,16 @@ export function CaseDetailPage() {
         </div>
 
         <div className="max-w-4xl mx-auto px-8 py-6 space-y-6">
+
+          {/* Report error */}
+          {reportErr && (
+            <div className="flex items-center justify-between px-4 py-3 bg-orange-50 border border-orange-200 rounded-xl">
+              <p className="text-sm text-orange-700">{reportErr}</p>
+              <button onClick={() => setReportErr(null)} className="text-orange-400 hover:text-orange-600 ml-4">
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           {/* Save error */}
           {saveErr && (
@@ -646,7 +884,7 @@ export function CaseDetailPage() {
           )}
 
           {/* Metadata strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
               {
                 icon: <UserCircleIcon className="w-4 h-4 text-on-surface-variant" />,
@@ -682,6 +920,45 @@ export function CaseDetailPage() {
                 </div>
               </div>
             ))}
+
+            {/* Risk score card */}
+            {(() => {
+              const score = caseItem.risk_score ?? 0
+              const count = caseItem.findings_count ?? 0
+              const pct   = Math.round(score)
+              const { bar, ring, label, textColor } =
+                pct >= 75 ? { bar: "bg-red-500",    ring: "stroke-red-500",    label: "High Risk",    textColor: "text-red-700"    } :
+                pct >= 50 ? { bar: "bg-orange-500", ring: "stroke-orange-500", label: "Medium Risk",  textColor: "text-orange-700" } :
+                pct >= 25 ? { bar: "bg-amber-500",  ring: "stroke-amber-500",  label: "Low Risk",     textColor: "text-amber-700"  } :
+                count > 0 ? { bar: "bg-blue-400",   ring: "stroke-blue-400",   label: "Minimal Risk", textColor: "text-blue-700"   } :
+                            { bar: "bg-slate-300",  ring: "stroke-slate-300",  label: "No Findings",  textColor: "text-slate-500"  }
+              const circumference = 2 * Math.PI * 20
+              const dash = (pct / 100) * circumference
+              return (
+                <div className="card-enter flex items-center gap-3 p-3.5 bg-white rounded-xl border border-outline-variant/60"
+                     style={{ animationDelay: "200ms" }}>
+                  {/* Ring */}
+                  <div className="relative shrink-0 w-12 h-12">
+                    <svg className="w-12 h-12 -rotate-90" viewBox="0 0 48 48">
+                      <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" strokeWidth="4"
+                              className="text-outline-variant/20" />
+                      <circle cx="24" cy="24" r="20" fill="none" strokeWidth="4"
+                              className={ring}
+                              strokeDasharray={`${dash} ${circumference}`}
+                              strokeLinecap="round" />
+                    </svg>
+                    <span className={`absolute inset-0 flex items-center justify-center text-[11px] font-bold ${textColor}`}>
+                      {pct}%
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Risk Score</p>
+                    <p className={`text-sm font-bold mt-0.5 ${textColor}`}>{label}</p>
+                    <p className="text-[10px] text-on-surface-variant mt-0.5">{count} finding{count !== 1 ? "s" : ""}</p>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
 
           {/* Tabs */}
@@ -719,10 +996,7 @@ export function CaseDetailPage() {
               <EvidenceTab caseId={caseItem.id} />
             )}
             {tab === "findings" && (
-              <PlaceholderTab label="Findings" icon={<MagnifyingGlassIcon className="w-7 h-7" />} />
-            )}
-            {tab === "report" && (
-              <PlaceholderTab label="Report" icon={<DocumentChartBarIcon className="w-7 h-7" />} />
+              <FindingsTab caseId={caseItem.id} />
             )}
           </div>
 
