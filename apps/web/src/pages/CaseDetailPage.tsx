@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   ArrowLeftIcon,
   PencilSquareIcon,
@@ -14,9 +14,15 @@ import {
   ChevronDownIcon,
   ExclamationTriangleIcon,
   ArchiveBoxIcon,
+  ArrowUpTrayIcon,
+  DocumentIcon,
+  PhotoIcon,
+  MusicalNoteIcon,
+  ArchiveBoxIcon as ArchiveFileIcon,
+  CodeBracketIcon,
 } from "@heroicons/react/24/outline"
 import { AppLayout } from "../components/AppLayout"
-import { type Case, getCase, updateCase } from "../lib/api"
+import { type Case, type Evidence, getCase, updateCase, uploadEvidence, listEvidences } from "../lib/api"
 
 // ─── Visual helpers ───────────────────────────────────────────────────────────
 
@@ -91,6 +97,224 @@ function PlaceholderTab({ label, icon }: { label: string; icon: React.ReactNode 
         <p className="font-semibold text-on-surface">{label} coming soon</p>
         <p className="text-sm text-on-surface-variant mt-1">This section will be available in a future update.</p>
       </div>
+    </div>
+  )
+}
+
+// ─── Evidence helpers ─────────────────────────────────────────────────────────
+
+function formatBytes(bytes: number) {
+  if (bytes === 0) return "0 B"
+  const k = 1024
+  const sizes = ["B", "KB", "MB", "GB"]
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
+}
+
+function FileTypeIcon({ type }: { type: Evidence["file_type"] }) {
+  const base = "w-5 h-5"
+  switch (type) {
+    case "image":    return <PhotoIcon      className={`${base} text-violet-500`} />
+    case "audio":    return <MusicalNoteIcon className={`${base} text-pink-500`} />
+    case "document": return <DocumentIcon   className={`${base} text-blue-500`} />
+    case "archive":  return <ArchiveFileIcon className={`${base} text-amber-500`} />
+    case "text":     return <CodeBracketIcon className={`${base} text-emerald-500`} />
+    default:         return <DocumentIcon   className={`${base} text-on-surface-variant`} />
+  }
+}
+
+function EvidenceStatusBadge({ status }: { status: Evidence["status"] }) {
+  const map: Record<Evidence["status"], { cls: string; label: string }> = {
+    uploaded:   { cls: "bg-blue-50 text-blue-700",   label: "Uploaded"   },
+    classified: { cls: "bg-teal-50 text-teal-700",   label: "Classified" },
+    queued:     { cls: "bg-amber-50 text-amber-700", label: "Queued"     },
+    processing: { cls: "bg-purple-50 text-purple-700 animate-pulse", label: "Processing" },
+    completed:  { cls: "bg-green-50 text-green-700", label: "Completed"  },
+    failed:     { cls: "bg-red-50 text-red-700",     label: "Failed"     },
+  }
+  const { cls, label } = map[status] ?? map.uploaded
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${cls}`}>
+      {label}
+    </span>
+  )
+}
+
+// ─── Evidence tab ─────────────────────────────────────────────────────────────
+
+function EvidenceTab({ caseId }: { caseId: string }) {
+  const [evidences,    setEvidences]    = useState<Evidence[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [uploading,    setUploading]    = useState(false)
+  const [progress,     setProgress]     = useState(0)
+  const [uploadErr,    setUploadErr]    = useState<string | null>(null)
+  const [dragOver,     setDragOver]     = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const loadEvidences = useCallback(() => {
+    listEvidences(caseId)
+      .then(d => setEvidences(d.evidences))
+      .catch(() => setEvidences([]))
+      .finally(() => setLoading(false))
+  }, [caseId])
+
+  useEffect(() => { loadEvidences() }, [loadEvidences])
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return
+    const file = files[0]
+
+    setUploading(true)
+    setProgress(0)
+    setUploadErr(null)
+
+    try {
+      const ev = await uploadEvidence(caseId, file, pct => setProgress(pct))
+      setEvidences(prev => [ev, ...prev])
+    } catch (err) {
+      setUploadErr(err instanceof Error ? err.message : "Upload failed. Please try again.")
+    } finally {
+      setUploading(false)
+      setProgress(0)
+      if (inputRef.current) inputRef.current.value = ""
+    }
+  }
+
+  function onDragOver(e: React.DragEvent) { e.preventDefault(); setDragOver(true) }
+  function onDragLeave()                  { setDragOver(false) }
+  function onDrop(e: React.DragEvent)     { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files) }
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── Upload zone ─────────────────────────────────────────── */}
+      <div
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        onClick={() => !uploading && inputRef.current?.click()}
+        className={`
+          relative flex flex-col items-center justify-center gap-3 py-10 px-6
+          rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-200
+          ${dragOver
+            ? "border-secondary bg-secondary/5 scale-[1.01]"
+            : "border-outline-variant/70 hover:border-secondary/60 hover:bg-surface-container-low/50"
+          }
+          ${uploading ? "pointer-events-none opacity-75" : ""}
+        `}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          onChange={e => handleFiles(e.target.files)}
+        />
+
+        {uploading ? (
+          <div className="w-full max-w-xs space-y-3 text-center">
+            <div className="w-10 h-10 rounded-2xl bg-secondary/10 flex items-center justify-center mx-auto">
+              <ArrowUpTrayIcon className="w-5 h-5 text-secondary animate-bounce" />
+            </div>
+            <p className="text-sm font-semibold text-on-surface">Uploading…</p>
+            <div className="w-full bg-surface-container rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-secondary to-primary rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-xs text-on-surface-variant">{progress}%</p>
+          </div>
+        ) : (
+          <>
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors
+              ${dragOver ? "bg-secondary/20" : "bg-surface-container"}`}>
+              <ArrowUpTrayIcon className={`w-6 h-6 transition-colors ${dragOver ? "text-secondary" : "text-on-surface-variant"}`} />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-on-surface">
+                Drop a file here, or <span className="text-secondary">click to browse</span>
+              </p>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Images, audio, documents, archives · up to 100 MB
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Upload error */}
+      {uploadErr && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-error/8 border border-error/20 rounded-xl">
+          <XMarkIcon className="w-4 h-4 text-error mt-0.5 shrink-0" />
+          <p className="text-sm text-error">{uploadErr}</p>
+          <button onClick={() => setUploadErr(null)} className="ml-auto text-error/60 hover:text-error transition-colors">
+            <XMarkIcon className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Evidence list ────────────────────────────────────────── */}
+      {loading ? (
+        <div className="space-y-2">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="skeleton h-14 rounded-xl" style={{ animationDelay: `${i * 80}ms` }} />
+          ))}
+        </div>
+      ) : evidences.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+          <BeakerIcon className="w-10 h-10 text-outline/60" />
+          <div>
+            <p className="text-sm font-semibold text-on-surface">No evidence yet</p>
+            <p className="text-xs text-on-surface-variant mt-1">Upload your first file to get started.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+            {evidences.length} file{evidences.length !== 1 ? "s" : ""}
+          </p>
+          {evidences.map((ev, i) => (
+            <div
+              key={ev.id}
+              className="row-enter flex items-center gap-3 px-4 py-3 rounded-xl
+                         border border-outline-variant/50 bg-surface-container-low/40
+                         hover:bg-surface-container/70 transition-colors group"
+              style={{ animationDelay: `${i * 40}ms` }}
+            >
+              {/* Type icon */}
+              <div className="w-9 h-9 rounded-lg bg-white border border-outline-variant/50
+                              flex items-center justify-center shrink-0">
+                <FileTypeIcon type={ev.file_type} />
+              </div>
+
+              {/* File info */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-on-surface truncate">{ev.original_filename}</p>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  {formatBytes(ev.size_bytes)}
+                  <span className="mx-1.5 text-outline">·</span>
+                  <span className="capitalize">{ev.file_type}</span>
+                  {ev.uploaded_by_name && (
+                    <>
+                      <span className="mx-1.5 text-outline">·</span>
+                      {ev.uploaded_by_name}
+                    </>
+                  )}
+                </p>
+              </div>
+
+              {/* Status */}
+              <EvidenceStatusBadge status={ev.status} />
+
+              {/* Hash (truncated) — visible on hover */}
+              <span className="hidden group-hover:inline-block text-[10px] font-mono text-outline
+                               truncate max-w-[120px]" title={ev.hash_sha256}>
+                {ev.hash_sha256.slice(0, 12)}…
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -492,7 +716,7 @@ export function CaseDetailPage() {
               />
             )}
             {tab === "evidence" && (
-              <PlaceholderTab label="Evidence" icon={<BeakerIcon className="w-7 h-7" />} />
+              <EvidenceTab caseId={caseItem.id} />
             )}
             {tab === "findings" && (
               <PlaceholderTab label="Findings" icon={<MagnifyingGlassIcon className="w-7 h-7" />} />
@@ -513,7 +737,16 @@ export function CaseDetailPage() {
                 </p>
               </div>
               <button
-                onClick={() => handleSave()}
+                onClick={async () => {
+                  if (!caseItem) return
+                  setSaving(true)
+                  try {
+                    const data = await updateCase(caseItem.id, { status: "archived" })
+                    setCaseItem(data.case)
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
                 className="inline-flex items-center gap-2 h-9 px-4 text-sm font-semibold
                            text-on-surface-variant border border-outline-variant rounded-xl
                            hover:bg-surface-container transition-colors"
