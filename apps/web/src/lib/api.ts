@@ -245,6 +245,37 @@ export async function getReport(caseId: string) {
   return handleResponse<{ report: Report }>(res)
 }
 
+// ─── Notifications (HU-26) ────────────────────────────────────────────────────
+
+export type Notification = {
+  id:          string
+  case_id:     string
+  finding_id?: string
+  title:       string
+  message:     string
+  severity:    "low" | "medium" | "high" | "critical"
+  read_at?:    string
+  created_at:  string
+}
+
+export async function listNotifications(unreadOnly = false) {
+  const qs = unreadOnly ? "?unread=true" : ""
+  const res = await fetch(`${BASE}/api/v1/notifications${qs}`, { headers: authHeaders() })
+  return handleResponse<{ notifications: Notification[]; total: number }>(res)
+}
+
+export async function markNotificationRead(id: string) {
+  const res = await fetch(`${BASE}/api/v1/notifications/${id}/read`, {
+    method:  "PATCH",
+    headers: authHeaders(),
+  })
+  return handleResponse<{ ok: boolean }>(res)
+}
+
+export async function markAllNotificationsRead() {
+  return markNotificationRead("all")
+}
+
 // ─── Dashboard metrics (HU-24) ─────────────────────────────────────────────────
 
 export type DashboardMetrics = {

@@ -42,6 +42,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	// HU-25: real-time SSE stream — flush immediately so events reach the browser
 	mux.Handle("GET /api/v1/cases/{caseId}/stream",     evidenceServiceStreamProxy(cfg, logger))
 
+	// ── notifications (HU-26) ────────────────────────────────────────────────
+	mux.Handle("GET /api/v1/notifications",              caseServiceProxy(cfg, logger, "/notifications"))
+	mux.Handle("PATCH /api/v1/notifications/{id}/read",  caseServiceNotificationReadProxy(cfg, logger))
+
 	// ── dashboard metrics (HU-24) ─────────────────────────────────────────────
 	mux.Handle("GET /api/v1/dashboard/metrics", caseServiceProxy(cfg, logger, "/dashboard/metrics"))
 
@@ -262,6 +266,30 @@ func evidenceServiceCaseProxy(cfg config.Config, logger *slog.Logger, resource s
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		logger.Error("evidence service proxy failed", "resource", resource, "error", err)
 		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Evidence service is unavailable.")
+	}
+	return proxy
+}
+
+// caseServiceNotificationReadProxy proxies PATCH /api/v1/notifications/{id}/read → case-service.
+func caseServiceNotificationReadProxy(cfg config.Config, logger *slog.Logger) http.Handler {
+	target, err := url.Parse(cfg.CaseServiceURL)
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger.Error("invalid case service url", "url", cfg.CaseServiceURL, "error", err)
+			writeError(w, http.StatusInternalServerError, "invalid_upstream", "Case service is not configured.")
+		})
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	orig := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		orig(r)
+		id := r.PathValue("id")
+		r.URL.Path = "/notifications/" + id + "/read"
+		r.Host = target.Host
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error("case service proxy failed", "error", err)
+		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Case service is unavailable.")
 	}
 	return proxy
 }

@@ -136,6 +136,20 @@ def create_finding(
         _notify(cur, {"type": "finding_created", "case_id": case_id, "evidence_id": evidence_id,
                       "finding_id": finding_id, "severity": severity, "title": title})
 
+        if severity in ("high", "critical"):
+            label = "Critical finding detected" if severity == "critical" else "High severity finding detected"
+            cur.execute(
+                """
+                INSERT INTO notifications (case_id, finding_id, title, message, severity)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (case_id, finding_id, label, title, severity),
+            )
+            notification_id = str(cur.fetchone()[0])
+            _notify(cur, {"type": "notification", "case_id": case_id,
+                          "notification_id": notification_id, "title": title, "severity": severity})
+
         # Recalculate case risk score after every new finding
         cur.execute(
             """

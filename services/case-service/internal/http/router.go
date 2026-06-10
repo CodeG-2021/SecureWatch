@@ -15,7 +15,7 @@ import (
 )
 
 // NewRouter wires all case-service routes and middleware.
-func NewRouter(cfg config.Config, logger *slog.Logger, cases *storage.CaseRepository, db *pgxpool.Pool) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger, cases *storage.CaseRepository, notifications *storage.NotificationRepository, db *pgxpool.Pool) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", healthHandler)
@@ -29,6 +29,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, cases *storage.CaseReposi
 	mux.Handle("GET /cases",          auth(listCasesHandler(logger, cases)))
 	mux.Handle("GET /cases/{id}",     auth(getCaseHandler(logger, cases)))
 	mux.Handle("PATCH /cases/{id}",   auth(updateCaseHandler(logger, cases)))
+
+	mux.Handle("GET /notifications",             auth(listNotificationsHandler(logger, notifications)))
+	mux.Handle("PATCH /notifications/{id}/read", auth(markNotificationReadHandler(logger, notifications)))
 
 	return loggingMiddleware(logger, mux)
 }

@@ -25,6 +25,7 @@ import {
 } from "@heroicons/react/24/outline"
 import { AppLayout } from "../components/AppLayout"
 import { type Case, type Evidence, type Finding, type Report, getCase, updateCase, uploadEvidence, listEvidences, listFindings, generateReport, getReport } from "../lib/api"
+import { useNotifications } from "../components/NotificationContext"
 
 // ─── Visual helpers ───────────────────────────────────────────────────────────
 
@@ -674,6 +675,8 @@ export function CaseDetailPage() {
       .finally(() => setLoading(false))
   }, [id])
 
+  const { refresh: refreshNotifications } = useNotifications()
+
   // HU-25: real-time updates via SSE
   useCaseStream(id, {
     onTaskUpdated:     () => setEvidenceRefresh(n => n + 1),
@@ -682,6 +685,7 @@ export function CaseDetailPage() {
     onRiskUpdated: (e) => setCaseItem(prev =>
       prev ? { ...prev, risk_score: e.risk_score, findings_count: e.findings_count } : prev
     ),
+    onNotification: () => refreshNotifications(),
   })
 
   function handleEdit() {

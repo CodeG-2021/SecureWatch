@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react"
 import {
   HomeIcon,
   FolderOpenIcon,
@@ -8,8 +9,12 @@ import {
   PlusCircleIcon,
   ArrowRightStartOnRectangleIcon,
   ShieldCheckIcon,
+  BellIcon,
+  CheckIcon,
 } from "@heroicons/react/24/outline"
 import { clearSession, getToken } from "../lib/session"
+import { markAllNotificationsRead, markNotificationRead } from "../lib/api"
+import { useNotifications } from "./NotificationContext"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,12 +76,35 @@ function initials(name: string) {
   return name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
 }
 
+const SEVERITY_DOT: Record<string, string> = {
+  critical: "bg-red-500",
+  high:     "bg-orange-400",
+  medium:   "bg-yellow-400",
+  low:      "bg-blue-400",
+}
+
 // ─── Sidebar component ────────────────────────────────────────────────────────
 
 export function Sidebar() {
   const path   = window.location.pathname
   const token  = getToken()
   const user   = parseToken(token)
+
+  const { notifications, unreadCount, refresh } = useNotifications()
+  const [bellOpen, setBellOpen] = useState(false)
+  const bellRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!bellOpen) return
+    function handleClick(e: MouseEvent) {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
+        setBellOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [bellOpen])
 
   function isActive(href: string) {
     if (href === "/dashboard") return path === href
@@ -92,6 +120,20 @@ export function Sidebar() {
     clearSession()
     window.location.replace("/login")
   }
+
+  async function handleMarkAllRead() {
+    await markAllNotificationsRead()
+    refresh()
+  }
+
+  async function handleNotificationClick(id: string, caseId: string) {
+    setBellOpen(false)
+    await markNotificationRead(id)
+    refresh()
+    window.location.href = `/cases/${caseId}`
+  }
+
+  const recentNotifications = notifications.slice(0, 10)
 
   return (
     <aside className="w-[220px] min-h-screen bg-[#0d1628] flex flex-col shrink-0 border-r border-white/5">
@@ -162,6 +204,78 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* ── Bell / Notifications ───────────────────────────────────────────── */}
+      <div className="px-3 py-2 border-t border-white/5" ref={bellRef}>
+        <button
+          onClick={() => setBellOpen(o => !o)}
+          className="relative flex items-center gap-2.5 w-full px-3 py-2.5 rounded-lg
+                     text-white/45 hover:text-white/90 hover:bg-white/[0.06]
+                     text-sm font-medium transition-all duration-150"
+        >
+          <BellIcon className="w-[18px] h-[18px] shrink-0 text-white/35" />
+          <span>Alerts</span>
+          {unreadCount > 0 && (
+            <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500
+                             flex items-center justify-center text-white text-[10px] font-bold leading-none">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </button>
+
+        {/* Dropdown */}
+        {bellOpen && (
+          <div className="absolute left-[228px] bottom-[90px] w-80 z-50
+                          bg-[#111c30] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <p className="text-white text-sm font-semibold">Alerts</p>
+              {unreadCount > 0 && (
+                <button
+                  onClick={handleMarkAllRead}
+                  className="flex items-center gap-1 text-xs text-secondary hover:text-white/70 transition-colors"
+                >
+                  <CheckIcon className="w-3 h-3" />
+                  Mark all read
+                </button>
+              )}
+            </div>
+
+            {/* List */}
+            <div className="max-h-80 overflow-y-auto">
+              {recentNotifications.length === 0 ? (
+                <p className="text-white/30 text-sm text-center py-6">No alerts yet</p>
+              ) : (
+                recentNotifications.map(n => (
+                  <button
+                    key={n.id}
+                    onClick={() => handleNotificationClick(n.id, n.case_id)}
+                    className={`w-full text-left px-4 py-3 border-b border-white/5 last:border-0
+                                hover:bg-white/[0.04] transition-colors
+                                ${!n.read_at ? "bg-white/[0.02]" : ""}`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${SEVERITY_DOT[n.severity] ?? "bg-white/20"}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-xs leading-snug truncate ${!n.read_at ? "text-white/90 font-medium" : "text-white/50"}`}>
+                          {n.title}
+                        </p>
+                        <p className="text-white/35 text-[10px] mt-0.5 truncate">{n.message}</p>
+                        <p className="text-white/20 text-[10px] mt-0.5">
+                          {new Date(n.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                      {!n.read_at && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-secondary shrink-0 mt-1.5" />
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ── User profile ──────────────────────────────────────────────────── */}
       <div className="border-t border-white/10 px-3 py-3">

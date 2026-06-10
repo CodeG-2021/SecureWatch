@@ -28,7 +28,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           casehttp.NewRouter(cfg, logger, storage.NewCaseRepository(db), db),
+		Handler:           casehttp.NewRouter(cfg, logger, storage.NewCaseRepository(db), storage.NewNotificationRepository(db), db),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
