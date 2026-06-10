@@ -19,8 +19,18 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /metrics", metricsHandler)
 	mux.HandleFunc("GET /api/v1", apiIndexHandler)
 	mux.HandleFunc("GET /api/v1/me", meHandler)
+
+	// ── auth-service ─────────────────────────────────────────────────────────
 	mux.Handle("POST /api/v1/auth/register", authServiceProxy(cfg, logger, "/auth/register"))
-	mux.Handle("POST /api/v1/auth/login", authServiceProxy(cfg, logger, "/auth/login"))
+	mux.Handle("POST /api/v1/auth/login",    authServiceProxy(cfg, logger, "/auth/login"))
+	mux.Handle("GET /api/v1/users",                  authServiceProxyPath(cfg, logger, "/auth/users"))
+	mux.Handle("PATCH /api/v1/users/{id}/role",      authServiceProxyDynamic(cfg, logger, "/auth/users", "role"))
+
+	// ── case-service ─────────────────────────────────────────────────────────
+	mux.Handle("POST /api/v1/cases",          caseServiceProxy(cfg, logger, "/cases"))
+	mux.Handle("GET /api/v1/cases",           caseServiceProxy(cfg, logger, "/cases"))
+	mux.Handle("GET /api/v1/cases/{id}",      caseServiceProxyDynamic(cfg, logger))
+	mux.Handle("PATCH /api/v1/cases/{id}",    caseServiceProxyDynamic(cfg, logger))
 
 	handler := recoverMiddleware(logger, mux)
 	handler = authMiddleware(cfg, logger, handler)
@@ -66,6 +76,12 @@ func apiIndexHandler(w http.ResponseWriter, r *http.Request) {
 			"GET /api/v1/me",
 			"POST /api/v1/auth/register",
 			"POST /api/v1/auth/login",
+			"GET /api/v1/users",
+			"PATCH /api/v1/users/{id}/role",
+			"POST /api/v1/cases",
+			"GET /api/v1/cases",
+			"GET /api/v1/cases/{id}",
+			"PATCH /api/v1/cases/{id}",
 		},
 	})
 }
@@ -92,6 +108,87 @@ func authServiceProxy(cfg config.Config, logger *slog.Logger, targetPath string)
 		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Auth service is unavailable.")
 	}
 
+	return proxy
+}
+
+// authServiceProxyPath proxies to a fixed upstream path (no rewrite needed).
+func authServiceProxyPath(cfg config.Config, logger *slog.Logger, targetPath string) http.Handler {
+	return authServiceProxy(cfg, logger, targetPath)
+}
+
+// authServiceProxyDynamic proxies dynamic path segments, e.g. /api/v1/users/{id}/role
+// → /auth/users/{id}/role, preserving the path variable.
+func authServiceProxyDynamic(cfg config.Config, logger *slog.Logger, prefix string, suffix string) http.Handler {
+	target, err := url.Parse(cfg.AuthServiceURL)
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger.Error("invalid auth service url", "url", cfg.AuthServiceURL, "error", err)
+			writeError(w, http.StatusInternalServerError, "invalid_upstream", "Auth service is not configured.")
+		})
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	originalDirector := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		originalDirector(r)
+		id := r.PathValue("id")
+		r.URL.Path = prefix + "/" + id + "/" + suffix
+		r.Host = target.Host
+		r.Header.Set("X-Forwarded-Host", r.Host)
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error("auth service proxy failed", "error", err)
+		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Auth service is unavailable.")
+	}
+
+	return proxy
+}
+
+// caseServiceProxy forwards a request to a fixed path on the case-service.
+func caseServiceProxy(cfg config.Config, logger *slog.Logger, targetPath string) http.Handler {
+	target, err := url.Parse(cfg.CaseServiceURL)
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger.Error("invalid case service url", "url", cfg.CaseServiceURL, "error", err)
+			writeError(w, http.StatusInternalServerError, "invalid_upstream", "Case service is not configured.")
+		})
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	orig := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		orig(r)
+		r.URL.Path = targetPath
+		r.URL.RawQuery = r.URL.RawQuery // preserve query params for GET /cases?status=...
+		r.Host = target.Host
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error("case service proxy failed", "error", err)
+		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Case service is unavailable.")
+	}
+	return proxy
+}
+
+// caseServiceProxyDynamic preserves the {id} path variable when proxying to case-service.
+func caseServiceProxyDynamic(cfg config.Config, logger *slog.Logger) http.Handler {
+	target, err := url.Parse(cfg.CaseServiceURL)
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger.Error("invalid case service url", "url", cfg.CaseServiceURL, "error", err)
+			writeError(w, http.StatusInternalServerError, "invalid_upstream", "Case service is not configured.")
+		})
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	orig := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		orig(r)
+		id := r.PathValue("id")
+		r.URL.Path = "/cases/" + id
+		r.Host = target.Host
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error("case service proxy failed", "error", err)
+		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Case service is unavailable.")
+	}
 	return proxy
 }
 

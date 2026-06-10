@@ -21,8 +21,20 @@ func actorFromRequest(r *http.Request) Actor {
 	}
 }
 
-// requireRole returns a middleware that aborts with 403 unless the actor has
-// one of the allowed roles.
+// requireAuth aborts with 401 when gateway identity headers are missing.
+func requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actor := actorFromRequest(r)
+		if actor.ID == "" {
+			writeError(w, http.StatusUnauthorized, "missing_identity", "Identity headers are missing.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requireRole returns a middleware that aborts with 403 unless the actor holds
+// one of the listed roles.
 func requireRole(roles ...string) func(http.Handler) http.Handler {
 	allowed := make(map[string]struct{}, len(roles))
 	for _, r := range roles {
@@ -48,17 +60,13 @@ func requireRole(roles ...string) func(http.Handler) http.Handler {
 func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		recorder := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
-
-		next.ServeHTTP(recorder, r)
-
-		logger.Info(
-			"http request",
+		rec := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		logger.Info("http request",
 			"method", r.Method,
 			"path", r.URL.Path,
-			"status", recorder.statusCode,
+			"status", rec.statusCode,
 			"duration_ms", time.Since(start).Milliseconds(),
-			"remote_addr", r.RemoteAddr,
 		)
 	})
 }
@@ -68,7 +76,7 @@ type statusRecorder struct {
 	statusCode int
 }
 
-func (r *statusRecorder) WriteHeader(statusCode int) {
-	r.statusCode = statusCode
-	r.ResponseWriter.WriteHeader(statusCode)
+func (r *statusRecorder) WriteHeader(code int) {
+	r.statusCode = code
+	r.ResponseWriter.WriteHeader(code)
 }

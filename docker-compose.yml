@@ -32,6 +32,7 @@ services:
       CORS_ALLOWED_METHODS: ${CORS_ALLOWED_METHODS:-GET,POST,PUT,PATCH,DELETE,OPTIONS}
       CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS:-Authorization,Content-Type,X-Request-ID}
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:8081}
+      CASE_SERVICE_URL: ${CASE_SERVICE_URL:-http://case-service:8082}
     ports:
       - "${API_GATEWAY_PORT:-8080}:8080"
     healthcheck:
@@ -41,6 +42,8 @@ services:
       retries: 5
     depends_on:
       auth-service:
+        condition: service_healthy
+      case-service:
         condition: service_healthy
     networks:
       - securewatch
@@ -69,6 +72,29 @@ services:
     networks:
       - securewatch
 
+  case-service:
+    build:
+      context: ./services/case-service
+      dockerfile: Dockerfile
+    container_name: securewatch-case-service
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      CASE_SERVICE_PORT: ${CASE_SERVICE_PORT:-8082}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      DATABASE_URL: postgres://${POSTGRES_USER:-securewatch}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-securewatch}?sslmode=disable
+    ports:
+      - "${CASE_SERVICE_PORT:-8082}:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8082/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - securewatch
+
   postgres:
     image: postgres:16-alpine
     container_name: securewatch-postgres
@@ -80,7 +106,9 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infra/database/init:/docker-entrypoint-initdb.d:ro
+      - ./infra/database/init/001_create_users.sql:/docker-entrypoint-initdb.d/001_create_users.sql:ro
+      - ./infra/database/init/002_add_audit_log.sql:/docker-entrypoint-initdb.d/002_add_audit_log.sql:ro
+      - ./infra/database/init/003_create_cases.sql:/docker-entrypoint-initdb.d/003_create_cases.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-securewatch} -d ${POSTGRES_DB:-securewatch}"]
       interval: 10s
