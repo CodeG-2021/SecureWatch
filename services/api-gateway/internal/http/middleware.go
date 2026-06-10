@@ -128,7 +128,8 @@ func isPublicRoute(path string) bool {
 	return path == "/healthz" ||
 		path == "/readyz" ||
 		path == "/metrics" ||
-		path == "/api/v1/auth/register"
+		path == "/api/v1/auth/register" ||
+		path == "/api/v1/auth/login"
 }
 
 func validateHS256JWT(token string, secret string) (JWTClaims, error) {
