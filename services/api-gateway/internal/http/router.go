@@ -39,6 +39,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	mux.Handle("POST /api/v1/cases/{caseId}/report",    evidenceServiceCaseProxy(cfg, logger, "report"))
 	mux.Handle("GET /api/v1/cases/{caseId}/report",     evidenceServiceCaseProxy(cfg, logger, "report"))
 
+	// HU-25: real-time SSE stream — flush immediately so events reach the browser
+	mux.Handle("GET /api/v1/cases/{caseId}/stream",     evidenceServiceStreamProxy(cfg, logger))
+
 	// ── dashboard metrics (HU-24) ─────────────────────────────────────────────
 	mux.Handle("GET /api/v1/dashboard/metrics", caseServiceProxy(cfg, logger, "/dashboard/metrics"))
 
@@ -207,6 +210,35 @@ func caseServiceProxyDynamic(cfg config.Config, logger *slog.Logger) http.Handle
 // evidenceServiceProxyDynamic forwards /api/v1/cases/{caseId}/evidences → evidence-service.
 func evidenceServiceProxyDynamic(cfg config.Config, logger *slog.Logger) http.Handler {
 	return evidenceServiceCaseProxy(cfg, logger, "evidences")
+}
+
+// evidenceServiceStreamProxy proxies the SSE stream endpoint with immediate flushing.
+func evidenceServiceStreamProxy(cfg config.Config, logger *slog.Logger) http.Handler {
+	target, err := url.Parse(cfg.EvidenceServiceURL)
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeError(w, http.StatusInternalServerError, "invalid_upstream", "Evidence service is not configured.")
+		})
+	}
+	proxy := &httputil.ReverseProxy{
+		FlushInterval: -1, // flush every write immediately (required for SSE)
+		Director: func(r *http.Request) {
+			r.URL.Scheme = target.Scheme
+			r.URL.Host = target.Host
+			r.Host = target.Host
+			caseID := r.PathValue("caseId")
+			r.URL.Path = "/cases/" + caseID + "/stream"
+			// Remove token query param before forwarding (auth already validated)
+			q := r.URL.Query()
+			q.Del("token")
+			r.URL.RawQuery = q.Encode()
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			logger.Error("stream proxy failed", "error", err)
+			writeError(w, http.StatusBadGateway, "upstream_unavailable", "Evidence service is unavailable.")
+		},
+	}
+	return proxy
 }
 
 // evidenceServiceCaseProxy proxies /api/v1/cases/{caseId}/<resource> → evidence-service.
