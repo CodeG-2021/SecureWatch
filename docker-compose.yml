@@ -143,11 +143,32 @@ services:
       - ./infra/database/init/002_add_audit_log.sql:/docker-entrypoint-initdb.d/002_add_audit_log.sql:ro
       - ./infra/database/init/003_create_cases.sql:/docker-entrypoint-initdb.d/003_create_cases.sql:ro
       - ./infra/database/init/004_create_evidences.sql:/docker-entrypoint-initdb.d/004_create_evidences.sql:ro
+      - ./infra/database/init/005_create_tasks.sql:/docker-entrypoint-initdb.d/005_create_tasks.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-securewatch} -d ${POSTGRES_DB:-securewatch}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - securewatch
+
+  task-orchestrator:
+    build:
+      context: ./services/task-orchestrator
+      dockerfile: Dockerfile
+    container_name: securewatch-task-orchestrator
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      DATABASE_URL: postgres://${POSTGRES_USER:-securewatch}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-securewatch}?sslmode=disable
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-securewatch}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-5}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - securewatch
 
