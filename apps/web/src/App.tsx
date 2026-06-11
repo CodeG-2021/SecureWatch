@@ -1,4 +1,5 @@
 import { isAuthenticated } from "./lib/session"
+import { AuditPage }       from "./pages/AuditPage"
 import { CaseDetailPage }  from "./pages/CaseDetailPage"
 import { CasesPage }       from "./pages/CasesPage"
 import { CreateCasePage }  from "./pages/CreateCasePage"
@@ -37,6 +38,8 @@ export function App() {
 
   if (path === "/dashboard") {
     page = requireAuth(<DashboardPage />)
+  } else if (path === "/audit") {
+    page = requireAuth(<AuditPage />)
   } else if (path === "/users") {
     page = requireAuth(<UsersPage />)
   } else if (path === "/cases") {

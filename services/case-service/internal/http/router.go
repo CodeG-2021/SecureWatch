@@ -9,32 +9,53 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/codeg/securewatch/services/case-service/internal/audit"
 	"github.com/codeg/securewatch/services/case-service/internal/config"
 	"github.com/codeg/securewatch/services/case-service/internal/domain"
+	"github.com/codeg/securewatch/services/case-service/internal/metrics"
 	"github.com/codeg/securewatch/services/case-service/internal/storage"
 )
 
 // NewRouter wires all case-service routes and middleware.
-func NewRouter(cfg config.Config, logger *slog.Logger, cases *storage.CaseRepository, notifications *storage.NotificationRepository, db *pgxpool.Pool) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger, cases *storage.CaseRepository, notifications *storage.NotificationRepository, auditRepo *storage.AuditEventRepository, db *pgxpool.Pool) http.Handler {
+	metrics.Init("case-service")
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", healthHandler)
 	mux.HandleFunc("GET /readyz", readyHandler)
+	mux.HandleFunc("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /dashboard/metrics", requireAuth(dashboardMetricsHandler(db)).ServeHTTP)
 
 	// All case routes require a valid actor identity injected by the gateway.
 	auth := requireAuth
 
-	mux.Handle("POST /cases",         auth(createCaseHandler(logger, cases)))
+	mux.Handle("POST /cases",         auth(createCaseHandler(logger, cases, db)))
 	mux.Handle("GET /cases",          auth(listCasesHandler(logger, cases)))
 	mux.Handle("GET /cases/{id}",     auth(getCaseHandler(logger, cases)))
-	mux.Handle("PATCH /cases/{id}",   auth(updateCaseHandler(logger, cases)))
+	mux.Handle("PATCH /cases/{id}",   auth(updateCaseHandler(logger, cases, db)))
 
 	mux.Handle("GET /notifications",             auth(listNotificationsHandler(logger, notifications)))
 	mux.Handle("PATCH /notifications/{id}/read", auth(markNotificationReadHandler(logger, notifications)))
 
-	return loggingMiddleware(logger, mux)
+	mux.Handle("GET /audit", auth(requireSupervisor(listAuditEventsHandler(logger, auditRepo))))
+
+	handler := metrics.Middleware(mux)
+	return loggingMiddleware(logger, handler)
 }
+
+// requireSupervisor rejects requests from actors who are not admin or supervisor.
+func requireSupervisor(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		actor := actorFromRequest(r)
+		if actor.Role != "admin" && actor.Role != "supervisor" {
+			writeError(w, http.StatusForbidden, "insufficient_permission", "Audit log requires admin or supervisor role.")
+			return
+		}
+		next(w, r)
+	}
+}
+
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -53,7 +74,7 @@ func readyHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 // createCaseHandler creates a new case (HU-07).
-func createCaseHandler(logger *slog.Logger, cases *storage.CaseRepository) http.HandlerFunc {
+func createCaseHandler(logger *slog.Logger, cases *storage.CaseRepository, db *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input domain.CreateCaseInput
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -73,6 +94,12 @@ func createCaseHandler(logger *slog.Logger, cases *storage.CaseRepository) http.
 			writeError(w, http.StatusInternalServerError, "internal_error", "Could not create case.")
 			return
 		}
+		audit.Write(db, audit.Event{
+			ActorID: actor.ID, ActorEmail: actor.Email,
+			Action: "case.created", ResourceType: "case", ResourceID: c.ID,
+			Metadata:  map[string]any{"title": c.Title, "priority": c.Priority},
+			IPAddress: r.RemoteAddr,
+		})
 		writeJSON(w, http.StatusCreated, map[string]any{"case": c})
 	}
 }
@@ -119,7 +146,7 @@ func getCaseHandler(logger *slog.Logger, cases *storage.CaseRepository) http.Han
 
 // updateCaseHandler patches a case (HU-10).
 // Admins and supervisors may update any case; analysts may only update their own.
-func updateCaseHandler(logger *slog.Logger, cases *storage.CaseRepository) http.HandlerFunc {
+func updateCaseHandler(logger *slog.Logger, cases *storage.CaseRepository, db *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		if id == "" {
@@ -163,6 +190,21 @@ func updateCaseHandler(logger *slog.Logger, cases *storage.CaseRepository) http.
 			writeError(w, http.StatusInternalServerError, "internal_error", "Could not update case.")
 			return
 		}
+		meta := map[string]any{}
+		if input.Status != nil {
+			meta["old_status"] = existing.Status
+			meta["new_status"] = *input.Status
+		}
+		action := "case.updated"
+		if input.Status != nil && *input.Status != existing.Status {
+			action = "case.status_changed"
+		}
+		audit.Write(db, audit.Event{
+			ActorID: actor.ID, ActorEmail: actor.Email,
+			Action: action, ResourceType: "case", ResourceID: id,
+			Metadata:  meta,
+			IPAddress: r.RemoteAddr,
+		})
 		writeJSON(w, http.StatusOK, map[string]any{"case": updated})
 	}
 }

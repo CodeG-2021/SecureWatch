@@ -8,12 +8,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/codeg/securewatch/services/evidence-service/internal/audit"
 	"github.com/codeg/securewatch/services/evidence-service/internal/domain"
 	"github.com/codeg/securewatch/services/evidence-service/internal/storage"
 )
 
 // handleGenerateReport creates a new HTML report for a case and stores it in MinIO (HU-22).
-func handleGenerateReport(w http.ResponseWriter, r *http.Request, reports *storage.ReportsRepository, minio *storage.MinIOStore) {
+func handleGenerateReport(w http.ResponseWriter, r *http.Request, reports *storage.ReportsRepository, minio *storage.MinIOStore, db *pgxpool.Pool) {
 	caseID := r.PathValue("caseId")
 	actor := actorFromRequest(r)
 
@@ -75,11 +78,17 @@ func handleGenerateReport(w http.ResponseWriter, r *http.Request, reports *stora
 		rep.DownloadURL = url
 	}
 
+	audit.Write(db, audit.Event{
+		ActorID: actor.ID, ActorEmail: actor.Email,
+		Action: "report.generated", ResourceType: "report", ResourceID: rep.ID,
+		Metadata:  map[string]any{"case_id": caseID, "findings": len(data.Findings)},
+		IPAddress: r.RemoteAddr,
+	})
 	writeJSON(w, http.StatusCreated, map[string]any{"report": rep})
 }
 
 // handleGetReport returns the latest report metadata with a presigned download URL (HU-23).
-func handleGetReport(w http.ResponseWriter, r *http.Request, reports *storage.ReportsRepository, minio *storage.MinIOStore) {
+func handleGetReport(w http.ResponseWriter, r *http.Request, reports *storage.ReportsRepository, minio *storage.MinIOStore, db *pgxpool.Pool) {
 	caseID := r.PathValue("caseId")
 
 	rep, err := reports.FindLatestByCaseID(r.Context(), caseID)
@@ -97,6 +106,13 @@ func handleGetReport(w http.ResponseWriter, r *http.Request, reports *storage.Re
 		rep.DownloadURL = url
 	}
 
+	actor := actorFromRequest(r)
+	audit.Write(db, audit.Event{
+		ActorID: actor.ID, ActorEmail: actor.Email,
+		Action: "report.downloaded", ResourceType: "report", ResourceID: rep.ID,
+		Metadata:  map[string]any{"case_id": r.PathValue("caseId")},
+		IPAddress: r.RemoteAddr,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"report": rep})
 }
 

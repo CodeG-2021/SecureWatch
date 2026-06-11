@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/codeg/securewatch/services/api-gateway/internal/config"
+	"github.com/codeg/securewatch/services/api-gateway/internal/metrics"
 )
 
 func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
+	metrics.Init("api-gateway")
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", healthHandler)
@@ -46,11 +49,15 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	mux.Handle("GET /api/v1/notifications",              caseServiceProxy(cfg, logger, "/notifications"))
 	mux.Handle("PATCH /api/v1/notifications/{id}/read",  caseServiceNotificationReadProxy(cfg, logger))
 
+	// ── audit log (HU-29) ─────────────────────────────────────────────────────
+	mux.Handle("GET /api/v1/audit", caseServiceProxy(cfg, logger, "/audit"))
+
 	// ── dashboard metrics (HU-24) ─────────────────────────────────────────────
 	mux.Handle("GET /api/v1/dashboard/metrics", caseServiceProxy(cfg, logger, "/dashboard/metrics"))
 
 	handler := recoverMiddleware(logger, mux)
 	handler = authMiddleware(cfg, logger, handler)
+	handler = metrics.Middleware(handler)
 	handler = loggingMiddleware(logger, handler)
 	handler = requestIDMiddleware(handler)
 	handler = corsMiddleware(cfg, handler)
@@ -75,10 +82,7 @@ func readyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func metricsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-	_, _ = w.Write([]byte("# HELP securewatch_api_gateway_up API Gateway process health.\n"))
-	_, _ = w.Write([]byte("# TYPE securewatch_api_gateway_up gauge\n"))
-	_, _ = w.Write([]byte("securewatch_api_gateway_up 1\n"))
+	metrics.Handler()(w, r)
 }
 
 func apiIndexHandler(w http.ResponseWriter, r *http.Request) {

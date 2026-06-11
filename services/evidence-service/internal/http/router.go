@@ -12,7 +12,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/codeg/securewatch/services/evidence-service/internal/audit"
 	"github.com/codeg/securewatch/services/evidence-service/internal/domain"
+	"github.com/codeg/securewatch/services/evidence-service/internal/metrics"
 	"github.com/codeg/securewatch/services/evidence-service/internal/storage"
 )
 
@@ -24,11 +26,13 @@ func NewRouter(
 	minioStore *storage.MinIOStore,
 	db *pgxpool.Pool,
 ) http.Handler {
+	metrics.Init("evidence-service")
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /cases/{caseId}/evidences", requireAuth(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handleUpload(w, r, evidences, minioStore)
+			handleUpload(w, r, evidences, minioStore, db)
 		}),
 	).ServeHTTP)
 
@@ -47,14 +51,14 @@ func NewRouter(
 	// HU-22: generate report
 	mux.HandleFunc("POST /cases/{caseId}/report", requireAuth(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handleGenerateReport(w, r, reports, minioStore)
+			handleGenerateReport(w, r, reports, minioStore, db)
 		}),
 	).ServeHTTP)
 
 	// HU-23: get latest report metadata + presigned URL
 	mux.HandleFunc("GET /cases/{caseId}/report", requireAuth(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handleGetReport(w, r, reports, minioStore)
+			handleGetReport(w, r, reports, minioStore, db)
 		}),
 	).ServeHTTP)
 
@@ -68,8 +72,10 @@ func NewRouter(
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("GET /metrics", metrics.Handler())
 
-	return loggingMiddleware(mux)
+	handler := metrics.Middleware(mux)
+	return loggingMiddleware(handler)
 }
 
 // ─── Upload handler (HU-11 + HU-12 + HU-13) ──────────────────────────────────
@@ -79,6 +85,7 @@ func handleUpload(
 	r *http.Request,
 	evidences *storage.EvidenceRepository,
 	minioStore *storage.MinIOStore,
+	db *pgxpool.Pool,
 ) {
 	actor := actorFromRequest(r)
 	caseID := r.PathValue("caseId")
@@ -176,6 +183,12 @@ func handleUpload(
 		return
 	}
 
+	audit.Write(db, audit.Event{
+		ActorID: actor.ID, ActorEmail: actor.Email,
+		Action: "evidence.uploaded", ResourceType: "evidence", ResourceID: ev.ID,
+		Metadata:  map[string]any{"case_id": caseID, "filename": header.Filename, "size_bytes": len(data)},
+		IPAddress: r.RemoteAddr,
+	})
 	writeJSON(w, http.StatusCreated, ev)
 }
 

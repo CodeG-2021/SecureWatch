@@ -27,8 +27,13 @@ func main() {
 	defer db.Close()
 
 	server := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           casehttp.NewRouter(cfg, logger, storage.NewCaseRepository(db), storage.NewNotificationRepository(db), db),
+		Addr: ":" + cfg.Port,
+		Handler: casehttp.NewRouter(cfg, logger,
+			storage.NewCaseRepository(db),
+			storage.NewNotificationRepository(db),
+			storage.NewAuditEventRepository(db),
+			db,
+		),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
