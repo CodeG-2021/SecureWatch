@@ -91,6 +91,10 @@ func authMiddleware(cfg config.Config, logger *slog.Logger, next http.Handler) h
 
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if token == "" || token == r.Header.Get("Authorization") {
+			// EventSource cannot set headers — accept token via query param for SSE endpoints.
+			token = r.URL.Query().Get("token")
+		}
+		if token == "" {
 			writeError(w, http.StatusUnauthorized, "missing_token", "Bearer token is required.")
 			return
 		}
@@ -100,6 +104,18 @@ func authMiddleware(cfg config.Config, logger *slog.Logger, next http.Handler) h
 			logger.Warn("jwt validation failed", "error", err, "request_id", r.Context().Value(requestIDKey))
 			writeError(w, http.StatusUnauthorized, "invalid_token", "Bearer token is invalid.")
 			return
+		}
+
+		// Forward identity to upstream services via trusted headers
+		r = r.Clone(r.Context())
+		if sub, ok := claims["sub"].(string); ok {
+			r.Header.Set("X-User-ID", sub)
+		}
+		if email, ok := claims["email"].(string); ok {
+			r.Header.Set("X-User-Email", email)
+		}
+		if role, ok := claims["role"].(string); ok {
+			r.Header.Set("X-User-Role", role)
 		}
 
 		ctx := context.WithValue(r.Context(), claimsKey, claims)
@@ -128,7 +144,8 @@ func isPublicRoute(path string) bool {
 	return path == "/healthz" ||
 		path == "/readyz" ||
 		path == "/metrics" ||
-		path == "/api/v1/auth/register"
+		path == "/api/v1/auth/register" ||
+		path == "/api/v1/auth/login"
 }
 
 func validateHS256JWT(token string, secret string) (JWTClaims, error) {
@@ -176,6 +193,13 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(statusCode int) {
 	r.statusCode = statusCode
 	r.ResponseWriter.WriteHeader(statusCode)
+}
+
+// Flush implements http.Flusher so SSE connections work through this middleware.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func newRequestID() string {

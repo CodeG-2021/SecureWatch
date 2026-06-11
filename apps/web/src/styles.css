@@ -19,3 +19,55 @@ body {
   font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
   background: #faf9fc;
 }
+
+/* ── Page transitions ─────────────────────────────────────────────────────── */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes row-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes card-pop {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.page-enter {
+  animation: page-enter 0.3s ease-out both;
+}
+
+.row-enter {
+  animation: row-in 0.25s ease-out both;
+}
+
+.card-enter {
+  animation: card-pop 0.3s ease-out both;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #e8e8ec 25%, #d8d8e0 50%, #e8e8ec 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 4px;
+}
+
+/* ── Priority border accents ─────────────────────────────────────────────── */
+.priority-critical { border-left: 3px solid #ef4444; }
+.priority-high      { border-left: 3px solid #f97316; }
+.priority-medium    { border-left: 3px solid #f59e0b; }
+.priority-low       { border-left: 3px solid #3b82f6; }
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar          { width: 6px; height: 6px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: #c4c6cf; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #74777f; }
