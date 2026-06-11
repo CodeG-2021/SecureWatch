@@ -245,6 +245,69 @@ export async function getReport(caseId: string) {
   return handleResponse<{ report: Report }>(res)
 }
 
+// ─── Audit Events (HU-29) ─────────────────────────────────────────────────────
+
+export type AuditEvent = {
+  id:            string
+  actor_id:      string
+  actor_email:   string
+  action:        string
+  resource_type: string
+  resource_id?:  string
+  metadata:      Record<string, unknown>
+  ip_address?:   string
+  created_at:    string
+}
+
+export async function listAuditEvents(params?: {
+  action?: string
+  resource_type?: string
+  actor_email?: string
+  limit?: number
+  offset?: number
+}) {
+  const qs = new URLSearchParams()
+  if (params?.action)        qs.set("action",        params.action)
+  if (params?.resource_type) qs.set("resource_type", params.resource_type)
+  if (params?.actor_email)   qs.set("actor_email",   params.actor_email)
+  if (params?.limit)         qs.set("limit",         String(params.limit))
+  if (params?.offset)        qs.set("offset",        String(params.offset))
+  const query = qs.toString() ? `?${qs}` : ""
+  const res = await fetch(`${BASE}/api/v1/audit${query}`, { headers: authHeaders() })
+  return handleResponse<{ events: AuditEvent[]; total: number }>(res)
+}
+
+// ─── Notifications (HU-26) ────────────────────────────────────────────────────
+
+export type Notification = {
+  id:          string
+  case_id:     string
+  finding_id?: string
+  title:       string
+  message:     string
+  severity:    "low" | "medium" | "high" | "critical"
+  read_at?:    string
+  created_at:  string
+}
+
+export async function listNotifications(unreadOnly = false) {
+  const qs = unreadOnly ? "?unread=true" : ""
+  const res = await fetch(`${BASE}/api/v1/notifications${qs}`, { headers: authHeaders() })
+  return handleResponse<{ notifications: Notification[]; total: number }>(res)
+}
+
+export async function markNotificationRead(id: string) {
+  const res = await fetch(`${BASE}/api/v1/notifications/${id}/read`, {
+    method:  "PATCH",
+    headers: authHeaders(),
+  })
+  return handleResponse<{ ok: boolean }>(res)
+}
+
+export async function markAllNotificationsRead() {
+  return markNotificationRead("all")
+}
+
 // ─── Dashboard metrics (HU-24) ─────────────────────────────────────────────────
 
 export type DashboardMetrics = {

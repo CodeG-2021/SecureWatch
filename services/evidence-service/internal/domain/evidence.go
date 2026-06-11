@@ -44,7 +44,6 @@ var allowedMIMETypes = map[string]bool{
 	// Text
 	"text/plain":       true,
 	"text/csv":         true,
-	"text/html":        true,
 	"text/xml":         true,
 	"application/json": true,
 	// Images

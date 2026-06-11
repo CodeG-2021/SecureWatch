@@ -25,6 +25,7 @@ import {
 } from "@heroicons/react/24/outline"
 import { AppLayout } from "../components/AppLayout"
 import { type Case, type Evidence, type Finding, type Report, getCase, updateCase, uploadEvidence, listEvidences, listFindings, generateReport, getReport } from "../lib/api"
+import { useNotifications } from "../components/NotificationContext"
 
 // ─── Visual helpers ───────────────────────────────────────────────────────────
 
@@ -130,14 +131,34 @@ function EvidenceStatusBadge({ status }: { status: Evidence["status"] }) {
 
 // ─── Evidence tab ─────────────────────────────────────────────────────────────
 
+const ALLOWED_UPLOAD_EXT = new Set([
+  "txt","csv","xml","json",
+  "jpg","jpeg","png","gif","webp","bmp","tiff","tif",
+  "mp3","wav","ogg","flac","m4a","webm",
+  "pdf","doc","docx","xls","xlsx","ppt","pptx",
+  "zip","tar","gz","7z","rar","bz2",
+])
+
+type QueueItem = {
+  key:      string
+  file:     File
+  status:   "pending" | "uploading" | "done" | "failed"
+  progress: number
+  error?:   string
+}
+
 function EvidenceTab({ caseId, refreshTrigger }: { caseId: string; refreshTrigger?: number }) {
   const [evidences,    setEvidences]    = useState<Evidence[]>([])
   const [loading,      setLoading]      = useState(true)
-  const [uploading,    setUploading]    = useState(false)
-  const [progress,     setProgress]     = useState(0)
-  const [uploadErr,    setUploadErr]    = useState<string | null>(null)
   const [dragOver,     setDragOver]     = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [queue,        setQueue]        = useState<QueueItem[]>([])
+  const [skipped,      setSkipped]      = useState(0)
+
+  const queueRef      = useRef<QueueItem[]>([])
+  const processingRef = useRef(false)
+  const processNextRef = useRef<() => void>(() => {})
+  const fileInputRef   = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
   const loadEvidences = useCallback(() => {
     listEvidences(caseId)
@@ -147,99 +168,265 @@ function EvidenceTab({ caseId, refreshTrigger }: { caseId: string; refreshTrigge
   }, [caseId])
 
   useEffect(() => { loadEvidences() }, [loadEvidences])
-  // Re-fetch when a real-time event signals a change
   useEffect(() => { if (refreshTrigger) loadEvidences() }, [refreshTrigger, loadEvidences])
 
-  async function handleFiles(files: FileList | null) {
-    if (!files || files.length === 0) return
-    const file = files[0]
+  // Stable callback ref — always has the latest closure values
+  processNextRef.current = async () => {
+    if (processingRef.current) return
+    const pending = queueRef.current.find(q => q.status === "pending")
+    if (!pending) return
 
-    setUploading(true)
-    setProgress(0)
-    setUploadErr(null)
+    processingRef.current = true
+
+    function mutate(fn: (prev: QueueItem[]) => QueueItem[]) {
+      setQueue(prev => {
+        const next = fn(prev)
+        queueRef.current = next
+        return next
+      })
+    }
+
+    mutate(q => q.map(item => item.key === pending.key ? { ...item, status: "uploading" as const } : item))
 
     try {
-      const ev = await uploadEvidence(caseId, file, pct => setProgress(pct))
+      const ev = await uploadEvidence(caseId, pending.file, pct => {
+        mutate(q => q.map(item => item.key === pending.key ? { ...item, progress: pct } : item))
+      })
+      mutate(q => q.map(item => item.key === pending.key ? { ...item, status: "done" as const, progress: 100 } : item))
       setEvidences(prev => [ev, ...prev])
     } catch (err) {
-      setUploadErr(err instanceof Error ? err.message : "Upload failed. Please try again.")
+      mutate(q => q.map(item => item.key === pending.key ? {
+        ...item,
+        status: "failed" as const,
+        error: err instanceof Error ? err.message : "Upload failed",
+      } : item))
     } finally {
-      setUploading(false)
-      setProgress(0)
-      if (inputRef.current) inputRef.current.value = ""
+      processingRef.current = false
+      processNextRef.current()
     }
   }
 
-  function onDragOver(e: React.DragEvent) { e.preventDefault(); setDragOver(true) }
-  function onDragLeave()                  { setDragOver(false) }
-  function onDrop(e: React.DragEvent)     { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files) }
+  function enqueue(files: File[]) {
+    if (files.length === 0) return
+    const items: QueueItem[] = files.map(f => ({
+      key:      `${f.name}-${Date.now()}-${Math.random()}`,
+      file:     f,
+      status:   "pending" as const,
+      progress: 0,
+    }))
+    setQueue(prev => {
+      const next = [...prev, ...items]
+      queueRef.current = next
+      return next
+    })
+    setTimeout(() => processNextRef.current(), 0)
+  }
+
+  function handleFileInput(fileList: FileList | null) {
+    if (!fileList) return
+    enqueue(Array.from(fileList))
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  function handleFolderInput(fileList: FileList | null) {
+    if (!fileList) return
+    const all   = Array.from(fileList)
+    const valid = all.filter(f => ALLOWED_UPLOAD_EXT.has(f.name.split(".").pop()?.toLowerCase() ?? ""))
+    const dropped = all.length - valid.length
+    if (dropped > 0) setSkipped(s => s + dropped)
+    enqueue(valid)
+    if (folderInputRef.current) folderInputRef.current.value = ""
+  }
+
+  function clearDone() {
+    setQueue(prev => {
+      const next = prev.filter(q => q.status === "pending" || q.status === "uploading")
+      queueRef.current = next
+      return next
+    })
+  }
+
+  function onDragOver(e: React.DragEvent)  { e.preventDefault(); setDragOver(true) }
+  function onDragLeave()                   { setDragOver(false) }
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    enqueue(Array.from(e.dataTransfer.files))
+  }
+
+  const isActive   = queue.some(q => q.status === "pending" || q.status === "uploading")
+  const doneCount  = queue.filter(q => q.status === "done").length
+  const failCount  = queue.filter(q => q.status === "failed").length
+  const hasDone    = doneCount > 0 || failCount > 0
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
 
       {/* ── Upload zone ─────────────────────────────────────────── */}
       <div
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        onClick={() => !uploading && inputRef.current?.click()}
         className={`
-          relative flex flex-col items-center justify-center gap-3 py-10 px-6
-          rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-200
+          relative flex flex-col items-center justify-center gap-3 py-8 px-6
+          rounded-2xl border-2 border-dashed transition-all duration-200
           ${dragOver
             ? "border-secondary bg-secondary/5 scale-[1.01]"
-            : "border-outline-variant/70 hover:border-secondary/60 hover:bg-surface-container-low/50"
+            : "border-outline-variant/70"
           }
-          ${uploading ? "pointer-events-none opacity-75" : ""}
         `}
       >
+        {/* Hidden inputs */}
         <input
-          ref={inputRef}
+          ref={fileInputRef}
           type="file"
+          multiple
           className="hidden"
-          onChange={e => handleFiles(e.target.files)}
+          onChange={e => handleFileInput(e.target.files)}
+        />
+        <input
+          ref={folderInputRef}
+          type="file"
+          // @ts-expect-error — webkitdirectory is non-standard but widely supported
+          webkitdirectory=""
+          className="hidden"
+          onChange={e => handleFolderInput(e.target.files)}
         />
 
-        {uploading ? (
-          <div className="w-full max-w-xs space-y-3 text-center">
-            <div className="w-10 h-10 rounded-2xl bg-secondary/10 flex items-center justify-center mx-auto">
-              <ArrowUpTrayIcon className="w-5 h-5 text-secondary animate-bounce" />
-            </div>
-            <p className="text-sm font-semibold text-on-surface">Uploading…</p>
-            <div className="w-full bg-surface-container rounded-full h-2 overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-secondary to-primary rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="text-xs text-on-surface-variant">{progress}%</p>
-          </div>
-        ) : (
-          <>
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors
-              ${dragOver ? "bg-secondary/20" : "bg-surface-container"}`}>
-              <ArrowUpTrayIcon className={`w-6 h-6 transition-colors ${dragOver ? "text-secondary" : "text-on-surface-variant"}`} />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-semibold text-on-surface">
-                Drop a file here, or <span className="text-secondary">click to browse</span>
-              </p>
-              <p className="text-xs text-on-surface-variant mt-1">
-                Images, audio, documents, archives · up to 100 MB
-              </p>
-            </div>
-          </>
-        )}
+        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors
+          ${dragOver ? "bg-secondary/20" : "bg-surface-container"}`}>
+          <ArrowUpTrayIcon className={`w-6 h-6 transition-colors ${dragOver ? "text-secondary" : "text-on-surface-variant"}`} />
+        </div>
+
+        <div className="text-center">
+          <p className="text-sm font-semibold text-on-surface">
+            Drop files or a folder here
+          </p>
+          <p className="text-xs text-on-surface-variant mt-1">
+            Images, audio, documents, archives · up to 100 MB per file
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 mt-1">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-on-secondary
+                       text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
+          >
+            <ArrowUpTrayIcon className="w-4 h-4" />
+            Select files
+          </button>
+          <button
+            type="button"
+            onClick={() => folderInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-outline-variant
+                       text-sm font-semibold text-on-surface hover:bg-surface-container transition-colors"
+          >
+            <ArchiveBoxIcon className="w-4 h-4 text-on-surface-variant" />
+            Select folder
+          </button>
+        </div>
       </div>
 
-      {/* Upload error */}
-      {uploadErr && (
-        <div className="flex items-start gap-3 px-4 py-3 bg-error/8 border border-error/20 rounded-xl">
-          <XMarkIcon className="w-4 h-4 text-error mt-0.5 shrink-0" />
-          <p className="text-sm text-error">{uploadErr}</p>
-          <button onClick={() => setUploadErr(null)} className="ml-auto text-error/60 hover:text-error transition-colors">
+      {/* Skipped files notice */}
+      {skipped > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0" />
+          <p className="text-sm text-amber-700 flex-1">
+            {skipped} file{skipped !== 1 ? "s" : ""} skipped — unsupported type
+          </p>
+          <button onClick={() => setSkipped(0)} className="text-amber-500 hover:text-amber-700 transition-colors">
             <XMarkIcon className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* ── Upload queue ──────────────────────────────────────── */}
+      {queue.length > 0 && (
+        <div className="rounded-2xl border border-outline-variant/50 overflow-hidden bg-surface-container-low/40">
+          {/* Header */}
+          <div className="flex items-center gap-3 px-4 py-2.5 border-b border-outline-variant/30 bg-surface-container/50">
+            <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider flex-1">
+              Upload queue
+            </span>
+            {queue.filter(q => q.status === "uploading").length > 0 && (
+              <span className="flex items-center gap-1.5 text-xs text-secondary font-medium">
+                <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
+                Uploading {queue.filter(q => q.status === "uploading").length}…
+              </span>
+            )}
+            {!isActive && (
+              <span className="text-xs text-on-surface-variant">
+                {doneCount > 0 && <span className="text-green-600 font-medium">{doneCount} done</span>}
+                {doneCount > 0 && failCount > 0 && <span className="mx-1">·</span>}
+                {failCount > 0 && <span className="text-red-600 font-medium">{failCount} failed</span>}
+              </span>
+            )}
+            {isActive && (
+              <span className="text-xs text-on-surface-variant">
+                {queue.filter(q => q.status === "pending").length} pending
+              </span>
+            )}
+            {hasDone && (
+              <button
+                onClick={clearDone}
+                className="text-xs text-on-surface-variant hover:text-on-surface transition-colors px-2 py-0.5
+                           rounded border border-outline-variant/50 hover:bg-surface-container"
+              >
+                Clear done
+              </button>
+            )}
+          </div>
+
+          {/* Items */}
+          <div className="divide-y divide-outline-variant/20 max-h-64 overflow-y-auto">
+            {queue.map(item => (
+              <div key={item.key} className="flex items-center gap-3 px-4 py-2.5">
+                {/* Status icon */}
+                <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                  {item.status === "done"      && <CheckIcon      className="w-4 h-4 text-green-500" />}
+                  {item.status === "failed"    && <XMarkIcon      className="w-4 h-4 text-red-500" />}
+                  {item.status === "uploading" && (
+                    <div className="w-4 h-4 border-2 border-secondary border-t-transparent rounded-full animate-spin" />
+                  )}
+                  {item.status === "pending"   && (
+                    <div className="w-2 h-2 rounded-full bg-outline-variant" />
+                  )}
+                </div>
+
+                {/* Filename */}
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-medium truncate ${
+                    item.status === "done"    ? "text-on-surface" :
+                    item.status === "failed"  ? "text-red-600"    :
+                    item.status === "pending" ? "text-on-surface-variant" : "text-on-surface"
+                  }`}>
+                    {item.file.name}
+                  </p>
+                  {item.status === "failed" && item.error && (
+                    <p className="text-[10px] text-red-500 truncate">{item.error}</p>
+                  )}
+                  {item.status === "uploading" && (
+                    <div className="mt-1 w-full bg-surface-container rounded-full h-1 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-secondary to-primary rounded-full transition-all duration-200"
+                        style={{ width: `${item.progress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Size / progress */}
+                <span className="text-[10px] text-on-surface-variant shrink-0">
+                  {item.status === "uploading"
+                    ? `${item.progress}%`
+                    : formatBytes(item.file.size)
+                  }
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -311,37 +498,71 @@ function EvidenceTab({ caseId, refreshTrigger }: { caseId: string; refreshTrigge
 
 // ─── Findings tab ─────────────────────────────────────────────────────────────
 
+const FINDINGS_PAGE_SIZE = 10
+
 function severityConfig(s: Finding["severity"]) {
   const map = {
-    critical: { cls: "bg-red-50 text-red-700 border border-red-200",    dot: "bg-red-500",    label: "Critical" },
-    high:     { cls: "bg-orange-50 text-orange-700 border border-orange-200", dot: "bg-orange-500", label: "High" },
-    medium:   { cls: "bg-amber-50 text-amber-700 border border-amber-200",   dot: "bg-amber-500",  label: "Medium" },
-    low:      { cls: "bg-blue-50 text-blue-700 border border-blue-200",      dot: "bg-blue-400",   label: "Low" },
+    critical: { cls: "bg-red-50 text-red-700 border border-red-200",              activeCls: "bg-red-600 text-white border-red-600",    dot: "bg-red-500",    label: "Critical" },
+    high:     { cls: "bg-orange-50 text-orange-700 border border-orange-200",     activeCls: "bg-orange-500 text-white border-orange-500", dot: "bg-orange-500", label: "High"     },
+    medium:   { cls: "bg-amber-50 text-amber-700 border border-amber-200",        activeCls: "bg-amber-500 text-white border-amber-500",  dot: "bg-amber-500",  label: "Medium"   },
+    low:      { cls: "bg-blue-50 text-blue-700 border border-blue-200",           activeCls: "bg-blue-500 text-white border-blue-500",    dot: "bg-blue-400",   label: "Low"      },
   }
   return map[s] ?? map.low
 }
 
 function findingTypeLabel(t: string) {
   const labels: Record<string, string> = {
-    transcription:          "Transcription",
-    transcription_warning:  "Audio Warning",
-    risk:                   "Risk Match",
-    entities:               "Entities",
-    keywords:               "Keywords",
-    image_objects:          "Objects Detected",
-    image_metadata:         "Image Metadata",
-    document_metadata:      "Document Metadata",
-    document_text:          "Document Text",
-    archive_contents:       "Archive Contents",
-    suspicious_file:        "Suspicious File",
+    transcription:         "Transcription",
+    transcription_warning: "Audio Warning",
+    risk:                  "Risk Match",
+    entities:              "Entities",
+    keywords:              "Keywords",
+    image_objects:         "Objects Detected",
+    image_metadata:        "Image Metadata",
+    document_metadata:     "Document Metadata",
+    document_text:         "Document Text",
+    archive_contents:      "Archive Contents",
+    suspicious_file:       "Suspicious File",
   }
   return labels[t] ?? t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
 }
 
+function findingFileType(f: Finding): string {
+  const audioTypes    = ["transcription", "transcription_warning"]
+  const imageTypes    = ["image_objects", "image_metadata"]
+  const documentTypes = ["document_metadata", "document_text"]
+  const archiveTypes  = ["archive_contents", "suspicious_file"]
+  if (audioTypes.includes(f.finding_type))    return "audio"
+  if (imageTypes.includes(f.finding_type))    return "image"
+  if (documentTypes.includes(f.finding_type)) return "document"
+  if (archiveTypes.includes(f.finding_type))  return "archive"
+  const ext = f.evidence_filename?.split(".").pop()?.toLowerCase() ?? ""
+  if (["mp3","wav","ogg","flac","m4a","webm"].includes(ext))           return "audio"
+  if (["jpg","jpeg","png","gif","webp","bmp","tiff"].includes(ext))    return "image"
+  if (["pdf","doc","docx","xls","xlsx","ppt","pptx"].includes(ext))   return "document"
+  if (["zip","tar","gz","7z","rar","bz2"].includes(ext))              return "archive"
+  return "text"
+}
+
+type FileTypeFilter = "all" | "image" | "audio" | "document" | "text" | "archive"
+type SeverityFilter = "all" | Finding["severity"]
+
+const FILE_TYPE_TABS: { id: FileTypeFilter; label: string; icon: React.ReactNode }[] = [
+  { id: "all",      label: "All",      icon: <MagnifyingGlassIcon className="w-3.5 h-3.5" /> },
+  { id: "image",    label: "Image",    icon: <PhotoIcon           className="w-3.5 h-3.5" /> },
+  { id: "audio",    label: "Audio",    icon: <MusicalNoteIcon     className="w-3.5 h-3.5" /> },
+  { id: "document", label: "Document", icon: <DocumentIcon        className="w-3.5 h-3.5" /> },
+  { id: "text",     label: "Text",     icon: <CodeBracketIcon     className="w-3.5 h-3.5" /> },
+  { id: "archive",  label: "Archive",  icon: <ArchiveFileIcon     className="w-3.5 h-3.5" /> },
+]
+
 function FindingsTab({ caseId, refreshTrigger }: { caseId: string; refreshTrigger?: number }) {
-  const [findings,   setFindings]   = useState<Finding[]>([])
-  const [loading,    setLoading]    = useState(true)
-  const [expanded,   setExpanded]   = useState<string | null>(null)
+  const [findings,        setFindings]        = useState<Finding[]>([])
+  const [loading,         setLoading]         = useState(true)
+  const [expanded,        setExpanded]        = useState<string | null>(null)
+  const [severityFilter,  setSeverityFilter]  = useState<SeverityFilter>("all")
+  const [typeFilter,      setTypeFilter]      = useState<FileTypeFilter>("all")
+  const [page,            setPage]            = useState(0)
 
   const loadFindings = useCallback(() => {
     listFindings(caseId)
@@ -352,12 +573,25 @@ function FindingsTab({ caseId, refreshTrigger }: { caseId: string; refreshTrigge
 
   useEffect(() => { loadFindings() }, [loadFindings])
   useEffect(() => { if (refreshTrigger) loadFindings() }, [refreshTrigger, loadFindings])
+  useEffect(() => { setPage(0) }, [severityFilter, typeFilter])
 
-  const bySeverity = ["critical", "high", "medium", "low"] as const
-  const counts = bySeverity.reduce((acc, s) => {
+  const severities = ["critical", "high", "medium", "low"] as const
+  const sevCounts  = severities.reduce((acc, s) => {
     acc[s] = findings.filter(f => f.severity === s).length
     return acc
   }, {} as Record<string, number>)
+
+  const typeCounts = FILE_TYPE_TABS.slice(1).reduce((acc, t) => {
+    acc[t.id] = findings.filter(f => findingFileType(f) === t.id).length
+    return acc
+  }, {} as Record<string, number>)
+
+  const filtered = findings
+    .filter(f => severityFilter === "all" || f.severity === severityFilter)
+    .filter(f => typeFilter === "all"     || findingFileType(f) === typeFilter)
+
+  const totalPages = Math.ceil(filtered.length / FINDINGS_PAGE_SIZE)
+  const paginated  = filtered.slice(page * FINDINGS_PAGE_SIZE, (page + 1) * FINDINGS_PAGE_SIZE)
 
   if (loading) {
     return (
@@ -377,103 +611,191 @@ function FindingsTab({ caseId, refreshTrigger }: { caseId: string; refreshTrigge
         </div>
         <div>
           <p className="text-sm font-semibold text-on-surface">No findings yet</p>
-          <p className="text-xs text-on-surface-variant mt-1">
-            Upload evidence and wait for the workers to process it.
-          </p>
+          <p className="text-xs text-on-surface-variant mt-1">Upload evidence and wait for the workers to process it.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
 
-      {/* ── Summary strip ────────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-2">
-        {bySeverity.map(s => {
-          const { cls, dot, label } = severityConfig(s)
+      {/* ── Severity filter cards ─────────────────────────────────── */}
+      <div className="grid grid-cols-5 gap-2">
+        {/* All */}
+        <button
+          onClick={() => setSeverityFilter("all")}
+          className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition-all
+            ${severityFilter === "all"
+              ? "bg-slate-700 text-white border-slate-700 shadow-sm"
+              : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+            }`}
+        >
+          <span className="text-xl font-bold">{findings.length}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide">All</span>
+        </button>
+
+        {severities.map(s => {
+          const { cls, activeCls, dot, label } = severityConfig(s)
+          const active = severityFilter === s
           return (
-            <div key={s} className={`flex flex-col items-center gap-1 p-3 rounded-xl border ${cls}`}>
-              <span className={`w-2.5 h-2.5 rounded-full ${dot}`} />
-              <span className="text-xl font-bold">{counts[s]}</span>
+            <button
+              key={s}
+              onClick={() => setSeverityFilter(active ? "all" : s)}
+              className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition-all
+                ${active ? activeCls : `${cls} hover:opacity-80`}`}
+            >
+              {!active && <span className={`w-2.5 h-2.5 rounded-full ${dot}`} />}
+              <span className="text-xl font-bold">{sevCounts[s] ?? 0}</span>
               <span className="text-[10px] font-semibold uppercase tracking-wide">{label}</span>
-            </div>
+            </button>
           )
         })}
+      </div>
+
+      {/* ── File type filter chips ────────────────────────────────── */}
+      <div className="flex flex-wrap gap-1.5">
+        {FILE_TYPE_TABS.map(t => {
+          const active  = typeFilter === t.id
+          const count   = t.id === "all" ? findings.length : (typeCounts[t.id] ?? 0)
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTypeFilter(active && t.id !== "all" ? "all" : t.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                          border transition-all
+                ${active
+                  ? "bg-secondary text-on-secondary border-secondary shadow-sm"
+                  : "bg-surface-container-low text-on-surface-variant border-outline-variant/50 hover:bg-surface-container"
+                }`}
+            >
+              {t.icon}
+              {t.label}
+              <span className={`text-[10px] ${active ? "opacity-80" : "text-outline"}`}>
+                {count}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ── Results summary ───────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-on-surface-variant">
+          {filtered.length === findings.length
+            ? `${findings.length} finding${findings.length !== 1 ? "s" : ""}`
+            : `${filtered.length} of ${findings.length} findings`
+          }
+        </p>
+        {(severityFilter !== "all" || typeFilter !== "all") && (
+          <button
+            onClick={() => { setSeverityFilter("all"); setTypeFilter("all") }}
+            className="text-xs text-secondary hover:underline"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* ── Findings list ─────────────────────────────────────────── */}
-      <div className="space-y-1.5">
-        <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
-          {findings.length} finding{findings.length !== 1 ? "s" : ""}
-        </p>
-
-        {findings.map((f, i) => {
-          const { cls, dot } = severityConfig(f.severity)
-          const isOpen = expanded === f.id
-          return (
-            <div
-              key={f.id}
-              className="row-enter rounded-xl border border-outline-variant/50 overflow-hidden"
-              style={{ animationDelay: `${i * 30}ms` }}
-            >
-              {/* Header row */}
-              <button
-                className="w-full flex items-center gap-3 px-4 py-3
-                           bg-surface-container-low/40 hover:bg-surface-container/70
-                           transition-colors text-left"
-                onClick={() => setExpanded(isOpen ? null : f.id)}
+      {paginated.length === 0 ? (
+        <div className="py-10 text-center">
+          <p className="text-sm text-on-surface-variant">No findings match the selected filters.</p>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {paginated.map((f, i) => {
+            const { cls, dot } = severityConfig(f.severity)
+            const isOpen = expanded === f.id
+            return (
+              <div
+                key={f.id}
+                className="row-enter rounded-xl border border-outline-variant/50 overflow-hidden"
+                style={{ animationDelay: `${i * 25}ms` }}
               >
-                {/* Severity dot */}
-                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dot}`} />
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-3
+                             bg-surface-container-low/40 hover:bg-surface-container/70
+                             transition-colors text-left"
+                  onClick={() => setExpanded(isOpen ? null : f.id)}
+                >
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dot}`} />
 
-                {/* Title */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-on-surface truncate">{f.title}</p>
-                  <p className="text-xs text-on-surface-variant mt-0.5">
-                    <span className="capitalize">{findingTypeLabel(f.finding_type)}</span>
-                    {f.evidence_filename && (
-                      <>
-                        <span className="mx-1.5 text-outline">·</span>
-                        {f.evidence_filename}
-                      </>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-on-surface truncate">{f.title}</p>
+                    <p className="text-xs text-on-surface-variant mt-0.5">
+                      <span>{findingTypeLabel(f.finding_type)}</span>
+                      {f.evidence_filename && (
+                        <>
+                          <span className="mx-1.5 text-outline">·</span>
+                          <span className="font-mono">{f.evidence_filename}</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px]
+                                    font-bold uppercase tracking-wide shrink-0 ${cls}`}>
+                    {f.severity}
+                  </span>
+
+                  <ChevronDownIcon className={`w-4 h-4 text-outline shrink-0 transition-transform
+                                              ${isOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {isOpen && (
+                  <div className="px-4 pb-4 pt-2 border-t border-outline-variant/30 bg-white space-y-3">
+                    {f.description && (
+                      <p className="text-sm text-on-surface leading-relaxed">{f.description}</p>
                     )}
-                  </p>
-                </div>
+                    {f.data && Object.keys(f.data).length > 0 && (
+                      <pre className="text-[11px] font-mono bg-surface-container-low p-3 rounded-lg
+                                      overflow-x-auto max-h-48 text-on-surface-variant leading-relaxed">
+                        {JSON.stringify(f.data, null, 2)}
+                      </pre>
+                    )}
+                    <p className="text-[10px] text-outline">
+                      {new Date(f.created_at).toLocaleString("en-US", {
+                        month: "short", day: "numeric", year: "numeric",
+                        hour: "2-digit", minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
-                {/* Severity badge */}
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide shrink-0 ${cls}`}>
-                  {f.severity}
-                </span>
-
-                {/* Expand chevron */}
-                <ChevronDownIcon className={`w-4 h-4 text-outline shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
-              </button>
-
-              {/* Expanded detail */}
-              {isOpen && (
-                <div className="px-4 pb-4 pt-2 border-t border-outline-variant/30 bg-white space-y-3">
-                  {f.description && (
-                    <p className="text-sm text-on-surface leading-relaxed">{f.description}</p>
-                  )}
-                  {f.data && Object.keys(f.data).length > 0 && (
-                    <pre className="text-[11px] font-mono bg-surface-container-low p-3 rounded-lg
-                                    overflow-x-auto max-h-48 text-on-surface-variant leading-relaxed">
-                      {JSON.stringify(f.data, null, 2)}
-                    </pre>
-                  )}
-                  <p className="text-[10px] text-outline">
-                    {new Date(f.created_at).toLocaleString("en-US", {
-                      month: "short", day: "numeric", year: "numeric",
-                      hour: "2-digit", minute: "2-digit",
-                    })}
-                  </p>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      {/* ── Pagination ────────────────────────────────────────────── */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-xs text-on-surface-variant">
+            Page {page + 1} of {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <button
+              disabled={page === 0}
+              onClick={() => setPage(p => p - 1)}
+              className="px-3 py-1.5 rounded-lg border border-outline-variant text-xs font-medium
+                         text-on-surface hover:bg-surface-container transition-colors
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <button
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage(p => p + 1)}
+              className="px-3 py-1.5 rounded-lg border border-outline-variant text-xs font-medium
+                         text-on-surface hover:bg-surface-container transition-colors
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -674,6 +996,8 @@ export function CaseDetailPage() {
       .finally(() => setLoading(false))
   }, [id])
 
+  const { refresh: refreshNotifications } = useNotifications()
+
   // HU-25: real-time updates via SSE
   useCaseStream(id, {
     onTaskUpdated:     () => setEvidenceRefresh(n => n + 1),
@@ -682,6 +1006,7 @@ export function CaseDetailPage() {
     onRiskUpdated: (e) => setCaseItem(prev =>
       prev ? { ...prev, risk_score: e.risk_score, findings_count: e.findings_count } : prev
     ),
+    onNotification: () => refreshNotifications(),
   })
 
   function handleEdit() {

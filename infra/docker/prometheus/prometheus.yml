@@ -1,5 +1,5 @@
 global:
-  scrape_interval: 15s
+  scrape_interval:     15s
   evaluation_interval: 15s
 
 scrape_configs:
@@ -11,3 +11,18 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["api-gateway:8080"]
+
+  - job_name: securewatch-case-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["case-service:8082"]
+
+  - job_name: securewatch-evidence-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["evidence-service:8083"]
+
+  - job_name: securewatch-auth-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["auth-service:8081"]

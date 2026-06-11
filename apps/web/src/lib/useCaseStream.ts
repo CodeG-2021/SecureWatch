@@ -8,12 +8,14 @@ export type StreamEvent =
   | { type: "evidence_updated"; case_id: string; evidence_id: string; status: string }
   | { type: "finding_created"; case_id: string; evidence_id: string; finding_id: string; severity: string; title: string }
   | { type: "risk_updated";    case_id: string; risk_score: number; findings_count: number }
+  | { type: "notification";    case_id: string; notification_id: string; title: string; severity: string }
 
 export type StreamHandlers = {
   onTaskUpdated?:     (e: Extract<StreamEvent, { type: "task_updated" }>)     => void
   onEvidenceUpdated?: (e: Extract<StreamEvent, { type: "evidence_updated" }>) => void
   onFindingCreated?:  (e: Extract<StreamEvent, { type: "finding_created" }>)  => void
   onRiskUpdated?:     (e: Extract<StreamEvent, { type: "risk_updated" }>)     => void
+  onNotification?:    (e: Extract<StreamEvent, { type: "notification" }>)     => void
 }
 
 export function useCaseStream(caseId: string | undefined, handlers: StreamHandlers) {
@@ -40,6 +42,9 @@ export function useCaseStream(caseId: string | undefined, handlers: StreamHandle
     })
     es.addEventListener("risk_updated", (e: MessageEvent) => {
       try { handlersRef.current.onRiskUpdated?.(JSON.parse(e.data)) } catch {}
+    })
+    es.addEventListener("notification", (e: MessageEvent) => {
+      try { handlersRef.current.onNotification?.(JSON.parse(e.data)) } catch {}
     })
 
     return () => { es.close() }

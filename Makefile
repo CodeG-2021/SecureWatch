@@ -1,27 +1,45 @@
 .PHONY: help up down logs ps migrate-db check-infra check-api-gateway check-register fmt test lint clean
 
-COMPOSE=docker compose
+COMPOSE  = docker compose
+ROOT     = $(shell pwd)
+LOG_DIR  = /tmp/securewatch-logs
+
+# All docker-compose services except the production web container
+BACKEND_SERVICES = postgres rabbitmq minio minio-init \
+                   auth-service case-service evidence-service api-gateway \
+                   task-orchestrator \
+                   text-worker document-worker image-worker audio-worker archive-worker \
+                   prometheus grafana
 
 help:
 	@echo "SecureWatch monorepo"
-	@echo "  make up      Starts PostgreSQL, RabbitMQ, MinIO, Prometheus, and Grafana"
-	@echo "  make down    Stops the local infrastructure"
-	@echo "  make logs    Streams infrastructure logs"
-	@echo "  make ps      Lists Docker Compose services"
-	@echo "  make migrate-db  Applies local database migrations"
-	@echo "  make check-infra  Verifies local infrastructure connectivity"
-	@echo "  make check-api-gateway  Verifies API Gateway endpoints"
-	@echo "  make check-register  Verifies user registration end to end"
-	@echo "  make fmt     Entry point for workspace formatters"
-	@echo "  make test    Entry point for workspace tests"
-	@echo "  make lint    Entry point for workspace linters"
-	@echo "  make clean   Removes common local artifacts"
+	@echo "  make up          Start everything (Docker backend + Vite dev server on :3000)"
+	@echo "  make down        Stop everything"
+	@echo "  make logs        Stream Docker infrastructure logs"
+	@echo "  make ps          List Docker Compose services"
+	@echo "  make migrate-db  Apply local database migrations"
 
 up:
-	$(COMPOSE) up -d
+	@mkdir -p $(LOG_DIR)
+	@echo "▶ Starting Docker services..."
+	@$(COMPOSE) up -d $(BACKEND_SERVICES)
+	@echo "▶ Starting frontend dev server on http://localhost:3000 ..."
+	@cd $(ROOT)/apps/web && npm run dev -- --port 3000 > $(LOG_DIR)/frontend.log 2>&1 &
+	@echo ""
+	@echo "✓ SecureWatch running at http://localhost:3000"
+	@echo "  Grafana:    http://localhost:3001"
+	@echo "  Prometheus: http://localhost:9090"
+	@echo "  MinIO:      http://localhost:9001"
+	@echo "  RabbitMQ:   http://localhost:15672"
+	@echo "  Logs: $(LOG_DIR)/frontend.log"
 
 down:
-	$(COMPOSE) down
+	@echo "▶ Stopping frontend dev server..."
+	@-kill $$(lsof -t -i:3000) 2>/dev/null; true
+	@echo "▶ Stopping Docker services..."
+	@$(COMPOSE) down
+	@echo ""
+	@echo "✓ SecureWatch stopped"
 
 logs:
 	$(COMPOSE) logs -f

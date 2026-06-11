@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/codeg/securewatch/services/api-gateway/internal/config"
+	"github.com/codeg/securewatch/services/api-gateway/internal/metrics"
 )
 
 func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
+	metrics.Init("api-gateway")
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", healthHandler)
@@ -42,11 +45,19 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	// HU-25: real-time SSE stream — flush immediately so events reach the browser
 	mux.Handle("GET /api/v1/cases/{caseId}/stream",     evidenceServiceStreamProxy(cfg, logger))
 
+	// ── notifications (HU-26) ────────────────────────────────────────────────
+	mux.Handle("GET /api/v1/notifications",              caseServiceProxy(cfg, logger, "/notifications"))
+	mux.Handle("PATCH /api/v1/notifications/{id}/read",  caseServiceNotificationReadProxy(cfg, logger))
+
+	// ── audit log (HU-29) ─────────────────────────────────────────────────────
+	mux.Handle("GET /api/v1/audit", caseServiceProxy(cfg, logger, "/audit"))
+
 	// ── dashboard metrics (HU-24) ─────────────────────────────────────────────
 	mux.Handle("GET /api/v1/dashboard/metrics", caseServiceProxy(cfg, logger, "/dashboard/metrics"))
 
 	handler := recoverMiddleware(logger, mux)
 	handler = authMiddleware(cfg, logger, handler)
+	handler = metrics.Middleware(handler)
 	handler = loggingMiddleware(logger, handler)
 	handler = requestIDMiddleware(handler)
 	handler = corsMiddleware(cfg, handler)
@@ -71,10 +82,7 @@ func readyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func metricsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-	_, _ = w.Write([]byte("# HELP securewatch_api_gateway_up API Gateway process health.\n"))
-	_, _ = w.Write([]byte("# TYPE securewatch_api_gateway_up gauge\n"))
-	_, _ = w.Write([]byte("securewatch_api_gateway_up 1\n"))
+	metrics.Handler()(w, r)
 }
 
 func apiIndexHandler(w http.ResponseWriter, r *http.Request) {
@@ -262,6 +270,30 @@ func evidenceServiceCaseProxy(cfg config.Config, logger *slog.Logger, resource s
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		logger.Error("evidence service proxy failed", "resource", resource, "error", err)
 		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Evidence service is unavailable.")
+	}
+	return proxy
+}
+
+// caseServiceNotificationReadProxy proxies PATCH /api/v1/notifications/{id}/read → case-service.
+func caseServiceNotificationReadProxy(cfg config.Config, logger *slog.Logger) http.Handler {
+	target, err := url.Parse(cfg.CaseServiceURL)
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger.Error("invalid case service url", "url", cfg.CaseServiceURL, "error", err)
+			writeError(w, http.StatusInternalServerError, "invalid_upstream", "Case service is not configured.")
+		})
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	orig := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		orig(r)
+		id := r.PathValue("id")
+		r.URL.Path = "/notifications/" + id + "/read"
+		r.Host = target.Host
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error("case service proxy failed", "error", err)
+		writeError(w, http.StatusBadGateway, "upstream_unavailable", "Case service is unavailable.")
 	}
 	return proxy
 }

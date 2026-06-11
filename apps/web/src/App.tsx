@@ -1,4 +1,5 @@
 import { isAuthenticated } from "./lib/session"
+import { AuditPage }       from "./pages/AuditPage"
 import { CaseDetailPage }  from "./pages/CaseDetailPage"
 import { CasesPage }       from "./pages/CasesPage"
 import { CreateCasePage }  from "./pages/CreateCasePage"
@@ -6,6 +7,7 @@ import { DashboardPage }   from "./pages/DashboardPage"
 import { LoginPage }       from "./pages/LoginPage"
 import { RegisterPage }    from "./pages/RegisterPage"
 import { UsersPage }       from "./pages/UsersPage"
+import { NotificationProvider } from "./components/NotificationContext"
 
 function requireAuth(page: React.ReactNode): React.ReactNode {
   if (!isAuthenticated()) {
@@ -32,27 +34,25 @@ export function App() {
   }
 
   // ── Protected routes ──────────────────────────────────────────────────────
+  let page: React.ReactNode = null
+
   if (path === "/dashboard") {
-    return requireAuth(<DashboardPage />) as React.ReactElement
+    page = requireAuth(<DashboardPage />)
+  } else if (path === "/audit") {
+    page = requireAuth(<AuditPage />)
+  } else if (path === "/users") {
+    page = requireAuth(<UsersPage />)
+  } else if (path === "/cases") {
+    page = requireAuth(<CasesPage />)
+  } else if (path === "/cases/new") {
+    page = requireAuth(<CreateCasePage />)
+  } else if (/^\/cases\/[^/]+$/.test(path)) {
+    page = requireAuth(<CaseDetailPage />)
+  } else {
+    window.location.replace("/login")
+    return null
   }
 
-  if (path === "/users") {
-    return requireAuth(<UsersPage />) as React.ReactElement
-  }
-
-  if (path === "/cases") {
-    return requireAuth(<CasesPage />) as React.ReactElement
-  }
-
-  if (path === "/cases/new") {
-    return requireAuth(<CreateCasePage />) as React.ReactElement
-  }
-
-  if (/^\/cases\/[^/]+$/.test(path)) {
-    return requireAuth(<CaseDetailPage />) as React.ReactElement
-  }
-
-  // ── Fallback ──────────────────────────────────────────────────────────────
-  window.location.replace("/login")
-  return null
+  if (!page) return null
+  return <NotificationProvider>{page as React.ReactElement}</NotificationProvider>
 }
