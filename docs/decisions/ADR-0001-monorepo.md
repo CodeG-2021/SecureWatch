@@ -17,7 +17,7 @@ Use a monorepo with explicit separation by component type:
 - `workers/` for specialized asynchronous processing.
 - `packages/` for shared contracts and utilities.
 - `infra/` for local infrastructure and operational configuration.
-- `docs/` for architecture, decisions, and roadmap.
+- `docs/` for architecture, decisions, and technical documentation.
 - `scripts/` for automation and load testing.
 
 ## Consequences

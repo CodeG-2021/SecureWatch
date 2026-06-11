@@ -241,6 +241,7 @@ See `.env.example` for the full list with defaults.
 | [API Reference](docs/api-reference.md) | All REST endpoints with methods, paths, and auth |
 | [Database Schema](docs/database-schema.md) | All tables, columns, and relationships |
 | [Workers](docs/workers.md) | Worker pipeline, task types, and finding registration |
+| [Features](docs/features.md) | Full feature list with details |
 | [Service Communication](docs/service-communication.md) | Communication patterns and RabbitMQ rules |
 | [Local Infrastructure](docs/local-infrastructure.md) | Docker Compose services, volumes, and ports |
 | [Development Guide](docs/development.md) | Setup, conventions, and contribution workflow |
@@ -262,13 +263,6 @@ make check-infra  # Verify infrastructure connectivity
 ```
 
 ---
-
-## Roadmap
-
-See [docs/roadmap.md](docs/roadmap.md) for the full story map.
-
-**Completed:** HU-00 through HU-26, HU-29, HU-30, HU-32  
-**Planned:** HU-27 (retries/DLQ), HU-28 (task cancellation), HU-31 (load testing)
 
 ---
 
